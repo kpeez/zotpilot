@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Iterable, Iterator
 
 import torch
@@ -7,7 +8,7 @@ from docling.document_converter import DocumentConverter
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer
 
-from .settings import BATCH_SIZE, CHUNK_MAX_TOKENS, EMBEDDING_MODEL, get_device
+from .settings import BATCH_SIZE, EMBEDDING_MODEL, get_device
 
 
 def load_tokenizer(model_id: str | None = None) -> AutoTokenizer:
@@ -27,24 +28,25 @@ def load_tokenizer(model_id: str | None = None) -> AutoTokenizer:
     return AutoTokenizer.from_pretrained(model_id)
 
 
-def parse_pdf(pdf_path: str) -> DoclingDocument:
+def parse_pdf(pdf_path: str | Path) -> DoclingDocument:
     """Convert a PDF file to a Docling document.
 
     Args:
-        pdf_path: Path to the PDF file
+        pdf_path: Path to the PDF file (can be string or Path object)
 
     Returns:
         Parsed Docling document
     """
     converter = DocumentConverter()
-    result = converter.convert(pdf_path)
+    pdf_path = Path(pdf_path).resolve()
+    result = converter.convert(str(pdf_path))
 
     return result.document
 
 
 def create_chunker(
     tokenizer: AutoTokenizer | None = None,
-    max_tokens: int = CHUNK_MAX_TOKENS,
+    max_tokens: int = 512,  # Ensure this matches your model's limit
     merge_peers: bool = True,
 ) -> HybridChunker:
     """Create a document chunker with specified settings.
@@ -60,6 +62,10 @@ def create_chunker(
     """
     if tokenizer is None:
         tokenizer = load_tokenizer()
+
+    # Add validation
+    if max_tokens > 512:
+        raise ValueError("Chunk size cannot exceed 512 tokens for this model")
 
     return HybridChunker(
         tokenizer=tokenizer,
@@ -86,7 +92,16 @@ def chunk_document(
     return chunker.chunk(document)
 
 
-def process_document(pdf_path: str, model_id: str | None = None) -> list[DocChunk]:
+def process_document(pdf_path: str | Path, model_id: str | None = None) -> list[DocChunk]:
+    """Process a PDF document into chunks.
+
+    Args:
+        pdf_path: Path to the PDF file (can be string or Path object)
+        model_id: Model ID to use for tokenization
+
+    Returns:
+        List of document chunks
+    """
     tokenizer = load_tokenizer(model_id=model_id)
     document = parse_pdf(pdf_path)
     chunker = create_chunker(tokenizer=tokenizer)
