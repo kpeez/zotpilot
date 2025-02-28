@@ -27,7 +27,7 @@ def load_tokenizer(model_id: str | None = None) -> AutoTokenizer:
 
 def get_text_embeddings(
     texts: list[str],
-    model_id: str | None = None,
+    model_id: str = EMBEDDING_MODEL,
     batch_size: int = BATCH_SIZE,
     device: str | None = None,
 ) -> torch.Tensor:
@@ -42,8 +42,6 @@ def get_text_embeddings(
     Returns:
         Tensor of shape (n_texts, embedding_dim) containing the embeddings
     """
-    if model_id is None:
-        model_id = EMBEDDING_MODEL
 
     device = device or get_device()
     model = SentenceTransformer(model_id)
