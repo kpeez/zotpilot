@@ -28,10 +28,10 @@ def get_text_embeddings(
     batch_size: int = BATCH_SIZE,
     device: str | None = None,
 ) -> torch.Tensor:
-    """Get embeddings for a list of texts.
+    """Get embeddings for a text or list of texts.
 
     Args:
-        texts: List of texts to embed
+        texts: Text string or list of texts to embed
         model_id: Model ID to use for embeddings, defaults to base model
         batch_size: Number of texts to process at once
         device: Device to use. If None, uses value from settings.get_device()
