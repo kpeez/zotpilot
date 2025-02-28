@@ -1,6 +1,6 @@
 import torch
 
-EMBEDDING_MODEL = "all-mpnet-base-v2"
+EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
 CHUNK_MAX_TOKENS = 512
 BATCH_SIZE = 32
 DEVICE = "auto"
