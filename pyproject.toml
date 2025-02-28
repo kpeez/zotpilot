@@ -28,7 +28,7 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--log-cli-level=INFO -sv --durations=0"
+addopts = "--log-cli-level=INFO -s --durations=0"
 
 [tool.ruff]
 line-length = 100
