@@ -10,7 +10,6 @@ dependencies = [
     "openai>=1.61.1",
     "pydantic>=2.10.6",
     "sentence-transformers>=3.4.1",
-    "spacy>=3.8.4",
     "streamlit>=1.42.0",
     "torch>=2.6.0",
     "typer",
@@ -23,9 +22,13 @@ dev = [
     "ruff>=0.9.6",
 ]
 
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--log-cli-level=INFO -sv --durations=0"
+addopts = "--log-cli-level=INFO -s --durations=0"
 
 [tool.ruff]
 line-length = 100
