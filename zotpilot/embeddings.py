@@ -23,7 +23,7 @@ def load_tokenizer(model_id: str = EMBEDDING_MODEL) -> AutoTokenizer:
 
 
 def get_text_embeddings(
-    texts: list[str],
+    texts: str | list[str],
     model_id: str | None = None,
     batch_size: int = BATCH_SIZE,
     device: str | None = None,
@@ -39,6 +39,8 @@ def get_text_embeddings(
     Returns:
         Tensor of shape (n_texts, embedding_dim) containing the embeddings
     """
+    if isinstance(texts, str):
+        texts = [texts]
 
     device = device or get_device()
     model_id = model_id or EMBEDDING_MODEL
