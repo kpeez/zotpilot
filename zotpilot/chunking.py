@@ -7,7 +7,7 @@ from docling.document_converter import DocumentConverter
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer
 
-_BASE_MODEL = "all-mpnet-base-v2"
+from .settings import BATCH_SIZE, CHUNK_MAX_TOKENS, EMBEDDING_MODEL, get_device
 
 
 def load_tokenizer(model_id: str | None = None) -> AutoTokenizer:
@@ -22,7 +22,7 @@ def load_tokenizer(model_id: str | None = None) -> AutoTokenizer:
     """
 
     if model_id is None:
-        model_id = _BASE_MODEL
+        model_id = EMBEDDING_MODEL
 
     return AutoTokenizer.from_pretrained(model_id)
 
@@ -44,7 +44,7 @@ def parse_pdf(pdf_path: str) -> DoclingDocument:
 
 def create_chunker(
     tokenizer: AutoTokenizer | None = None,
-    max_tokens: int = 512,
+    max_tokens: int = CHUNK_MAX_TOKENS,
     merge_peers: bool = True,
 ) -> HybridChunker:
     """Create a document chunker with specified settings.
@@ -98,7 +98,7 @@ def process_document(pdf_path: str, model_id: str | None = None) -> list[DocChun
 def get_chunk_embeddings(
     chunks: Iterable[DocChunk],
     model_id: str | None = None,
-    batch_size: int = 32,
+    batch_size: int = BATCH_SIZE,
     device: str | None = None,
 ) -> tuple[list[str], torch.Tensor]:
     """Get embeddings for document chunks efficiently using batched processing.
@@ -107,8 +107,7 @@ def get_chunk_embeddings(
         chunks: Chunks to embed
         model_id: Model ID to use for embeddings, defaults to base model
         batch_size: Number of chunks to process at once
-        device: Device to run inference on ('cuda', 'mps', or 'cpu').
-               If None, will use best available device.
+        device: Device to use. If None, uses value from settings.get_device()
 
     Returns:
         Tuple of (texts, embeddings) where:
@@ -116,17 +115,9 @@ def get_chunk_embeddings(
             - embeddings is a 2D tensor of shape (n_chunks, embedding_dim)
     """
     if model_id is None:
-        model_id = _BASE_MODEL
+        model_id = EMBEDDING_MODEL
 
-    if device is None:
-        device = (
-            "cuda"
-            if torch.cuda.is_available()
-            else "mps"
-            if torch.backends.mps.is_available()
-            else "cpu"
-        )
-
+    device = device or get_device()
     model = SentenceTransformer(model_id)
     model = model.to(device)
     chunk_list = list(chunks)
