@@ -1,31 +1,12 @@
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Iterator
 
-import torch
 from docling.chunking import DocChunk, HybridChunker
 from docling.datamodel.document import DoclingDocument
 from docling.document_converter import DocumentConverter
-from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer
 
-from .settings import BATCH_SIZE, EMBEDDING_MODEL, get_device
-
-
-def load_tokenizer(model_id: str | None = None) -> AutoTokenizer:
-    """Load the tokenizer for embedding model.
-
-    Args:
-        model_id: HuggingFace model ID of tokenizer to load.
-            If None, will use default model ID: "all-mpnet-base-v2"
-
-    Returns:
-        Loaded tokenizer
-    """
-
-    if model_id is None:
-        model_id = EMBEDDING_MODEL
-
-    return AutoTokenizer.from_pretrained(model_id)
+from .embeddings import load_tokenizer
 
 
 def parse_pdf(pdf_path: str | Path) -> DoclingDocument:
@@ -108,41 +89,3 @@ def process_document(pdf_path: str | Path, model_id: str | None = None) -> list[
     chunks = list(chunk_document(document, chunker=chunker))
 
     return chunks
-
-
-def get_chunk_embeddings(
-    chunks: Iterable[DocChunk],
-    model_id: str | None = None,
-    batch_size: int = BATCH_SIZE,
-    device: str | None = None,
-) -> tuple[list[str], torch.Tensor]:
-    """Get embeddings for document chunks efficiently using batched processing.
-
-    Args:
-        chunks: Chunks to embed
-        model_id: Model ID to use for embeddings, defaults to base model
-        batch_size: Number of chunks to process at once
-        device: Device to use. If None, uses value from settings.get_device()
-
-    Returns:
-        Tuple of (texts, embeddings) where:
-            - texts is a list of chunk texts
-            - embeddings is a 2D tensor of shape (n_chunks, embedding_dim)
-    """
-    if model_id is None:
-        model_id = EMBEDDING_MODEL
-
-    device = device or get_device()
-    model = SentenceTransformer(model_id)
-    model = model.to(device)
-    chunk_list = list(chunks)
-    texts = [chunk.text for chunk in chunk_list]
-    embeddings = model.encode(
-        texts,
-        batch_size=batch_size,
-        show_progress_bar=True,
-        convert_to_tensor=True,
-        device=device,
-    )
-
-    return texts, embeddings
