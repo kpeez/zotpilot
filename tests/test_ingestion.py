@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from docling.datamodel.document import DoclingDocument
 
-from zotpilot.chunking import (
+from zotpilot.ingestion import (
     chunk_document,
     create_chunker,
     parse_pdf,
