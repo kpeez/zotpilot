@@ -8,7 +8,7 @@ from transformers import AutoTokenizer
 from .settings import BATCH_SIZE, EMBEDDING_MODEL, get_device
 
 
-def load_tokenizer(model_id: str | None = None) -> AutoTokenizer:
+def load_tokenizer(model_id: str = EMBEDDING_MODEL) -> AutoTokenizer:
     """Load the tokenizer for embedding model.
 
     Args:
@@ -19,15 +19,12 @@ def load_tokenizer(model_id: str | None = None) -> AutoTokenizer:
         Loaded tokenizer
     """
 
-    if model_id is None:
-        model_id = EMBEDDING_MODEL
-
     return AutoTokenizer.from_pretrained(model_id)
 
 
 def get_text_embeddings(
     texts: list[str],
-    model_id: str = EMBEDDING_MODEL,
+    model_id: str | None = None,
     batch_size: int = BATCH_SIZE,
     device: str | None = None,
 ) -> torch.Tensor:
@@ -44,6 +41,7 @@ def get_text_embeddings(
     """
 
     device = device or get_device()
+    model_id = model_id or EMBEDDING_MODEL
     model = SentenceTransformer(model_id)
     model = model.to(device)
 
@@ -79,5 +77,6 @@ def get_chunk_embeddings(
     """
     chunk_list = list(chunks)
     texts = [chunk.text for chunk in chunk_list]
+    model_id = model_id or EMBEDDING_MODEL
     embeddings = get_text_embeddings(texts, model_id, batch_size, device)
     return texts, embeddings
