@@ -44,8 +44,7 @@ def get_text_embeddings(
 
     device = device or get_device()
     model_id = model_id or EMBEDDING_MODEL
-    model = SentenceTransformer(model_id)
-    model = model.to(device)
+    model = SentenceTransformer(model_id, device=device)
 
     embeddings = model.encode(
         texts,
@@ -81,4 +80,5 @@ def get_chunk_embeddings(
     texts = [chunk.text for chunk in chunk_list]
     model_id = model_id or EMBEDDING_MODEL
     embeddings = get_text_embeddings(texts, model_id, batch_size, device)
+
     return texts, embeddings
