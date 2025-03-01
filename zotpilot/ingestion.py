@@ -109,16 +109,16 @@ def process_document(pdf_path: str | Path, model_id: str | None = None) -> dict[
     """
     collection_name = Path(pdf_path).stem
     chunks = get_pdf_chunks(pdf_path, model_id=model_id)
+    chunk_texts, chunk_embeddings = get_chunk_embeddings(chunks, model_id=model_id)
     chunk_metadata = [
         {
-            "page": chunk.metadata.get("page_number", 0),
-            "section": chunk.metadata.get("section", ""),
+            "page": chunk.meta.doc_items[0].prov[0].page_no
+            if chunk.meta.doc_items and chunk.meta.doc_items[0].prov
+            else 0,
             "chunk_id": i,
         }
         for i, chunk in enumerate(chunks)
     ]
-
-    chunk_texts, chunk_embeddings = get_chunk_embeddings(chunks, model_id=model_id)
 
     return {
         "collection_name": collection_name,
