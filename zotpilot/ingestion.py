@@ -1,12 +1,12 @@
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 from docling.chunking import DocChunk, HybridChunker
 from docling.datamodel.document import DoclingDocument
 from docling.document_converter import DocumentConverter
 from transformers import AutoTokenizer
 
-from .embeddings import load_tokenizer
+from .embeddings import get_chunk_embeddings, load_tokenizer
 
 
 def parse_pdf(pdf_path: str | Path) -> DoclingDocument:
@@ -73,8 +73,8 @@ def chunk_document(
     return chunker.chunk(document)
 
 
-def process_document(pdf_path: str | Path, model_id: str | None = None) -> list[DocChunk]:
-    """Process a PDF document into chunks.
+def get_pdf_chunks(pdf_path: str | Path, model_id: str | None = None) -> list[DocChunk]:
+    """Get chunks from a PDF document.
 
     Args:
         pdf_path: Path to the PDF file (can be string or Path object)
@@ -89,3 +89,40 @@ def process_document(pdf_path: str | Path, model_id: str | None = None) -> list[
     chunks = list(chunk_document(document, chunker=chunker))
 
     return chunks
+
+
+def process_document(pdf_path: str | Path, model_id: str | None = None) -> dict[str, Any]:
+    """Process a document to generate text and embeddings.
+
+    This function handles the full pipeline from raw PDF to text and embeddings.
+
+    Args:
+        pdf_path: Path to the PDF file
+        model_id: Model ID to use for tokenization and embeddings
+
+    Returns:
+        Dictionary containing:
+        - collection_name: Name derived from the PDF filename
+        - chunk_texts: List of chunk texts
+        - chunk_metadata: List of chunk metadata
+        - chunk_embeddings: Tensor of chunk embeddings
+    """
+    collection_name = Path(pdf_path).stem
+    chunks = get_pdf_chunks(pdf_path, model_id=model_id)
+    chunk_metadata = [
+        {
+            "page": chunk.metadata.get("page_number", 0),
+            "section": chunk.metadata.get("section", ""),
+            "chunk_id": i,
+        }
+        for i, chunk in enumerate(chunks)
+    ]
+
+    chunk_texts, chunk_embeddings = get_chunk_embeddings(chunks, model_id=model_id)
+
+    return {
+        "collection_name": collection_name,
+        "chunk_texts": chunk_texts,
+        "chunk_metadata": chunk_metadata,
+        "chunk_embeddings": chunk_embeddings,
+    }
