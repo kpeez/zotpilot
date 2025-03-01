@@ -8,7 +8,7 @@ from transformers import AutoTokenizer
 from .settings import BATCH_SIZE, EMBEDDING_MODEL, get_device
 
 
-def load_tokenizer(model_id: str = EMBEDDING_MODEL) -> AutoTokenizer:
+def load_tokenizer(model_id: str | None = None) -> AutoTokenizer:
     """Load the tokenizer for embedding model.
 
     Args:
@@ -18,6 +18,7 @@ def load_tokenizer(model_id: str = EMBEDDING_MODEL) -> AutoTokenizer:
     Returns:
         Loaded tokenizer
     """
+    model_id = model_id or EMBEDDING_MODEL
 
     return AutoTokenizer.from_pretrained(model_id)
 
