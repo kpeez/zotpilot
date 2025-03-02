@@ -8,19 +8,68 @@ from transformers import AutoTokenizer
 from .settings import BATCH_SIZE, EMBEDDING_MODEL, get_device
 
 
-def load_tokenizer(model_id: str | None = None) -> AutoTokenizer:
-    """Load the tokenizer for embedding model.
+class EmbeddingModel:
+    """Wrapper for embedding model that handles tokenization and embedding.
 
-    Args:
-        model_id: HuggingFace model ID of tokenizer to load.
-            If None, will use default model ID: "all-mpnet-base-v2"
-
-    Returns:
-        Loaded tokenizer
+    This class provides a unified interface for working with embedding models,
+    handling both tokenization and embedding generation.
     """
-    model_id = model_id or EMBEDDING_MODEL
 
-    return AutoTokenizer.from_pretrained(model_id)
+    def __init__(
+        self,
+        model_id: str | None = None,
+        device: str | None = None,
+        batch_size: int = BATCH_SIZE,
+    ):
+        """Initialize the embedding model.
+
+        Args:
+            model_id: HuggingFace model ID to use. If None, uses default from settings.
+            device: Device to use for computation. If None, uses value from settings.
+            batch_size: Default batch size for embedding operations.
+        """
+        self.model_id = model_id or EMBEDDING_MODEL
+        self.device = device or get_device()
+        self.batch_size = batch_size
+        self._tokenizer = AutoTokenizer.from_pretrained(self.model_id)
+        self._model = SentenceTransformer(self.model_id, device=self.device)
+
+    @property
+    def tokenizer(self) -> AutoTokenizer:
+        """Get the tokenizer for this embedding model."""
+        return self._tokenizer
+
+    @property
+    def model(self) -> SentenceTransformer:
+        """Get the model for this embedding model."""
+        return self._model
+
+    def embed_texts(
+        self,
+        texts: str | list[str],
+        batch_size: int | None = None,
+    ) -> torch.Tensor:
+        """Embed text or list of texts.
+
+        Args:
+            texts: Text string or list of texts to embed
+            batch_size: Optional batch size override
+
+        Returns:
+            Tensor of shape (n_texts, embedding_dim) containing the embeddings
+        """
+        if isinstance(texts, str):
+            texts = [texts]
+
+        embeddings = self.model.encode(
+            texts,
+            batch_size=batch_size or self.batch_size,
+            show_progress_bar=True,
+            convert_to_tensor=True,
+            device=self.device,
+        )
+
+        return embeddings
 
 
 def get_text_embeddings(
@@ -40,22 +89,9 @@ def get_text_embeddings(
     Returns:
         Tensor of shape (n_texts, embedding_dim) containing the embeddings
     """
-    if isinstance(texts, str):
-        texts = [texts]
+    embedding_model = EmbeddingModel(model_id=model_id, device=device, batch_size=batch_size)
 
-    device = device or get_device()
-    model_id = model_id or EMBEDDING_MODEL
-    model = SentenceTransformer(model_id, device=device)
-
-    embeddings = model.encode(
-        texts,
-        batch_size=batch_size,
-        show_progress_bar=True,
-        convert_to_tensor=True,
-        device=device,
-    )
-
-    return embeddings
+    return embedding_model.embed_texts(texts)
 
 
 def get_chunk_embeddings(
@@ -77,9 +113,9 @@ def get_chunk_embeddings(
             - texts is a list of chunk texts
             - embeddings is a 2D tensor of shape (n_chunks, embedding_dim)
     """
+    embedding_model = EmbeddingModel(model_id=model_id, device=device, batch_size=batch_size)
     chunk_list = list(chunks)
     texts = [chunk.text for chunk in chunk_list]
-    model_id = model_id or EMBEDDING_MODEL
-    embeddings = get_text_embeddings(texts, model_id, batch_size, device)
+    embeddings = embedding_model.embed_texts(texts, batch_size=batch_size)
 
     return texts, embeddings

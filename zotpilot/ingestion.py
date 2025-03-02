@@ -6,7 +6,7 @@ from docling.datamodel.document import DoclingDocument
 from docling.document_converter import DocumentConverter
 from transformers import AutoTokenizer
 
-from .embeddings import get_chunk_embeddings, load_tokenizer
+from .embeddings import EmbeddingModel, get_chunk_embeddings
 
 
 def parse_pdf(pdf_path: str | Path) -> DoclingDocument:
@@ -27,7 +27,7 @@ def parse_pdf(pdf_path: str | Path) -> DoclingDocument:
 
 def create_chunker(
     tokenizer: AutoTokenizer | None = None,
-    max_tokens: int = 512,  # Ensure this matches your model's limit
+    max_tokens: int = 512,
     merge_peers: bool = True,
 ) -> HybridChunker:
     """Create a document chunker with specified settings.
@@ -42,11 +42,12 @@ def create_chunker(
         Configured chunker
     """
     if tokenizer is None:
-        tokenizer = load_tokenizer()
+        tokenizer = EmbeddingModel().tokenizer
 
-    # Add validation
-    if max_tokens > 512:
-        raise ValueError("Chunk size cannot exceed 512 tokens for this model")
+    if max_tokens > tokenizer.model_max_length:
+        raise ValueError(
+            f"Chunk size cannot exceed {tokenizer.model_max_length} tokens for this model"
+        )
 
     return HybridChunker(
         tokenizer=tokenizer,
@@ -83,9 +84,9 @@ def get_pdf_chunks(pdf_path: str | Path, model_id: str | None = None) -> list[Do
     Returns:
         List of document chunks
     """
-    tokenizer = load_tokenizer(model_id=model_id)
+    model = EmbeddingModel(model_id=model_id)
     document = parse_pdf(pdf_path)
-    chunker = create_chunker(tokenizer=tokenizer)
+    chunker = create_chunker(tokenizer=model.tokenizer)
     chunks = list(chunk_document(document, chunker=chunker))
 
     return chunks
