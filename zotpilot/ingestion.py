@@ -34,15 +34,15 @@ def create_chunker(
 
     Args:
         tokenizer: Tokenizer to use, will load default if None
-        max_tokens: Maximum tokens per chunk. Default is 384 to ensure chunks plus
-                   metadata stay under model's 512 token limit
+        max_tokens: Maximum tokens per chunk
         merge_peers: Whether to merge peer chunks
 
     Returns:
         Configured chunker
     """
     if tokenizer is None:
-        tokenizer = EmbeddingModel().tokenizer
+        embedding_model = EmbeddingModel()
+        tokenizer = embedding_model.tokenizer
 
     if max_tokens > tokenizer.model_max_length:
         raise ValueError(
@@ -74,17 +74,19 @@ def chunk_document(
     return chunker.chunk(document)
 
 
-def get_pdf_chunks(pdf_path: str | Path, model_id: str | None = None) -> list[DocChunk]:
+def get_pdf_chunks(
+    pdf_path: str | Path,
+    model: EmbeddingModel,
+) -> list[DocChunk]:
     """Get chunks from a PDF document.
 
     Args:
         pdf_path: Path to the PDF file (can be string or Path object)
-        model_id: Model ID to use for tokenization
+        model: EmbeddingModel instance to use for tokenization
 
     Returns:
         List of document chunks
     """
-    model = EmbeddingModel(model_id=model_id)
     document = parse_pdf(pdf_path)
     chunker = create_chunker(tokenizer=model.tokenizer)
     chunks = list(chunk_document(document, chunker=chunker))
@@ -109,8 +111,9 @@ def process_document(pdf_path: str | Path, model_id: str | None = None) -> dict[
         - chunk_embeddings: Tensor of chunk embeddings
     """
     collection_name = Path(pdf_path).stem
-    chunks = get_pdf_chunks(pdf_path, model_id=model_id)
-    chunk_texts, chunk_embeddings = get_chunk_embeddings(chunks, model_id=model_id)
+    model = EmbeddingModel(model_id=model_id)
+    chunks = get_pdf_chunks(pdf_path, model=model)
+    chunk_texts, chunk_embeddings = get_chunk_embeddings(chunks, model=model)
     chunk_metadata = [
         {
             "page": chunk.meta.doc_items[0].prov[0].page_no

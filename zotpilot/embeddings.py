@@ -72,50 +72,23 @@ class EmbeddingModel:
         return embeddings
 
 
-def get_text_embeddings(
-    texts: str | list[str],
-    model_id: str | None = None,
-    batch_size: int = BATCH_SIZE,
-    device: str | None = None,
-) -> torch.Tensor:
-    """Get embeddings for a text or list of texts.
-
-    Args:
-        texts: Text string or list of texts to embed
-        model_id: Model ID to use for embeddings, defaults to base model
-        batch_size: Number of texts to process at once
-        device: Device to use. If None, uses value from settings.get_device()
-
-    Returns:
-        Tensor of shape (n_texts, embedding_dim) containing the embeddings
-    """
-    embedding_model = EmbeddingModel(model_id=model_id, device=device, batch_size=batch_size)
-
-    return embedding_model.embed_texts(texts)
-
-
 def get_chunk_embeddings(
     chunks: Iterable[DocChunk],
-    model_id: str | None = None,
-    batch_size: int = BATCH_SIZE,
-    device: str | None = None,
+    model: EmbeddingModel,
 ) -> tuple[list[str], torch.Tensor]:
     """Get embeddings for document chunks efficiently using batched processing.
 
     Args:
         chunks: Chunks to embed
-        model_id: Model ID to use for embeddings, defaults to base model
-        batch_size: Number of chunks to process at once
-        device: Device to use. If None, uses value from settings.get_device()
+        model: EmbeddingModel instance to use
 
     Returns:
         Tuple of (texts, embeddings) where:
             - texts is a list of chunk texts
             - embeddings is a 2D tensor of shape (n_chunks, embedding_dim)
     """
-    embedding_model = EmbeddingModel(model_id=model_id, device=device, batch_size=batch_size)
     chunk_list = list(chunks)
     texts = [chunk.text for chunk in chunk_list]
-    embeddings = embedding_model.embed_texts(texts, batch_size=batch_size)
+    embeddings = model.embed_texts(texts)
 
     return texts, embeddings
