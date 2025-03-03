@@ -4,6 +4,7 @@ import pytest
 import torch
 from docling.datamodel.document import DoclingDocument
 
+from zotpilot.embeddings import EmbeddingModel
 from zotpilot.ingestion import (
     chunk_document,
     create_chunker,
@@ -66,7 +67,8 @@ def test_parse_invalid_file():
 
 def test_get_pdf_chunks():
     """Test that get_pdf_chunks returns valid chunks"""
-    chunks = get_pdf_chunks(TEST_PDF_PATH, model_id=TEST_MODEL_ID)
+    model = EmbeddingModel(model_id=TEST_MODEL_ID)
+    chunks = get_pdf_chunks(TEST_PDF_PATH, model=model)
     assert len(chunks) > 0
     assert all(len(chunk.text) > 20 for chunk in chunks)
 
