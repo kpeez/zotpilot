@@ -2,7 +2,7 @@ from typing import Any
 
 import torch
 
-from .embeddings import get_text_embeddings
+from .embeddings import EmbeddingModel
 
 
 def similarity_search(
@@ -66,7 +66,8 @@ def search_chunks(
     Returns:
         List of dicts containing matched chunks with their metadata and similarity scores
     """
-    query_embedding = get_text_embeddings([query], model_id=model_id)[0]
+    embedding_model = EmbeddingModel(model_id=model_id)
+    query_embedding = embedding_model.embed_text([query])[0]
     results = similarity_search(
         query_embedding=query_embedding,
         chunk_embeddings=chunk_embeddings,
