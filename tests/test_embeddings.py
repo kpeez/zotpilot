@@ -23,7 +23,7 @@ def test_embedding_model(mock_get_device, mock_tokenizer_cls, mock_sentence_tran
     # Create model and test embedding
     model = EmbeddingModel()
     texts = ["Sample text"]
-    result = model.embed_texts(texts)
+    result = model.embed_text(texts)
 
     assert isinstance(result, torch.Tensor)
     assert result.shape[0] == len(texts)  # one embedding per text
@@ -48,8 +48,8 @@ def test_embedding_model_string_vs_list(
     # Create model and test both string and list inputs
     model = EmbeddingModel()
     text = "Sample text"
-    result_string = model.embed_texts(text)
-    result_list = model.embed_texts([text])
+    result_string = model.embed_text(text)
+    result_list = model.embed_text([text])
 
     assert torch.equal(result_string, result_list)
     assert mock_model.encode.call_count == 2

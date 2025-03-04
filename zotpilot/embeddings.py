@@ -44,7 +44,7 @@ class EmbeddingModel:
         """Get the model for this embedding model."""
         return self._model
 
-    def embed_texts(
+    def embed_text(
         self,
         texts: str | list[str],
         batch_size: int | None = None,
@@ -89,6 +89,6 @@ def get_chunk_embeddings(
     """
     chunk_list = list(chunks)
     texts = [chunk.text for chunk in chunk_list]
-    embeddings = model.embed_texts(texts)
+    embeddings = model.embed_text(texts)
 
     return texts, embeddings
