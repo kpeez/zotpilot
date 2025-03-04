@@ -5,7 +5,7 @@ from docling.chunking import DocChunk
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer
 
-from .settings import BATCH_SIZE, EMBEDDING_MODEL, get_device
+from .utils.settings import BATCH_SIZE, EMBEDDING_MODEL, get_device
 
 
 class EmbeddingModel:
