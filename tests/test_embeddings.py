@@ -67,13 +67,13 @@ def test_get_chunk_embeddings():
     mock_chunk2.text = "This is the second chunk"
     mock_chunks = [mock_chunk1, mock_chunk2]
     mock_model = MagicMock()
-    mock_model.embed_texts.return_value = torch.tensor([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+    mock_model.embed_text.return_value = torch.tensor([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
     texts, embeddings = get_chunk_embeddings(mock_chunks, model=mock_model)
 
     assert len(texts) == len(mock_chunks)
     assert isinstance(embeddings, torch.Tensor)
     assert embeddings.shape[0] == len(mock_chunks)  # one embedding per chunk
-    mock_model.embed_texts.assert_called_once_with(
+    mock_model.embed_text.assert_called_once_with(
         [
             "This is the first chunk",
             "This is the second chunk",
