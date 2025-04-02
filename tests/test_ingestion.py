@@ -12,7 +12,7 @@ from zotpilot.ingestion import (
     parse_pdf,
     process_document,
 )
-from zotpilot.settings import EMBEDDING_MODEL
+from zotpilot.utils.settings import EMBEDDING_MODEL
 
 # Ignore the deprecation warnings from docling
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
