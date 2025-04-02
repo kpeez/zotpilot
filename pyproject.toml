@@ -1,8 +1,17 @@
 [project]
 name = "zotpilot"
 version = "0.1.0"
-description = "An AI-powered copilot for Zotero that enables conversational interaction with your research library."
+description = "An AI-powered copilot for Zotero that enables you to chat with your research library."
+authors = [{ name="Kyle Puhger", email="kpuhger@gmail.com" }]
 readme = "README.md"
+license = { text = "MIT" }
+keywords = ["zotero", "chat", "research"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+]
 requires-python = ">=3.12"
 dependencies = [
     "chromadb>=0.6.3",
@@ -12,7 +21,6 @@ dependencies = [
     "sentence-transformers>=3.4.1",
     "streamlit>=1.42.0",
     "torch>=2.6.0",
-    "typer",
 ]
 
 [dependency-groups]
@@ -24,6 +32,9 @@ dev = [
 
 [project.scripts]
 zotpilot = "zotpilot.cli:main"
+
+[project.urls]
+"Homepage" = "https://github.com/kpeez/zotpilot"
 
 [build-system]
 requires = ["hatchling"]
