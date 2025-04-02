@@ -7,7 +7,7 @@ from typing import Any
 import streamlit as st
 
 from zotpilot.ingestion import process_document
-from zotpilot.llm import rag_pipeline
+from zotpilot.llm import get_openai_client, rag_pipeline
 from zotpilot.utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_TEMPERATURE
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -57,6 +57,9 @@ if "settings" not in st.session_state:
         "max_tokens": DEFAULT_MAX_TOKENS,
         "model": DEFAULT_MODEL,
     }
+
+if "llm_client" not in st.session_state:
+    st.session_state.llm_client = None
 
 st.title("🤖 ZotPilot - Chat with your research library")
 
@@ -269,6 +272,9 @@ else:
             try:
                 document_data = st.session_state.document_data
                 settings = st.session_state.settings
+
+                if st.session_state.llm_client is None:
+                    st.session_state.llm_client = get_openai_client()
 
                 response, retrieved_chunks = rag_pipeline(
                     query=user_query,
