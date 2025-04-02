@@ -1,7 +1,6 @@
 import os
 import re
 import tempfile
-import time
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +10,6 @@ from zotpilot.ingestion import process_document
 from zotpilot.llm import rag_pipeline
 from zotpilot.utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_TEMPERATURE
 
-# Set this globally to avoid warnings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # page config
@@ -122,21 +120,11 @@ with st.sidebar:
                     pdf_path = tmp_file.name
 
                 progress_bar.progress(10, "Preparing document...")
-                time.sleep(0.5)
-
                 progress_bar.progress(20, "Parsing PDF document...")
-                time.sleep(0.5)
-
                 progress_bar.progress(40, "Extracting text content...")
-                time.sleep(0.5)
-
                 document_data = process_document(pdf_path)
-
                 progress_bar.progress(70, "Creating embeddings...")
-                time.sleep(0.5)
-
                 progress_bar.progress(90, "Finalizing...")
-                time.sleep(0.5)
 
                 st.session_state.document_data = document_data
                 os.unlink(pdf_path)
