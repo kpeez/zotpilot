@@ -5,13 +5,7 @@ import torch
 from docling.datamodel.document import DoclingDocument
 
 from zotpilot.embeddings import EmbeddingModel
-from zotpilot.ingestion import (
-    chunk_document,
-    create_chunker,
-    get_pdf_chunks,
-    parse_pdf,
-    process_document,
-)
+from zotpilot.ingestion import chunk_document, get_pdf_chunks, parse_pdf, process_document
 from zotpilot.utils.settings import EMBEDDING_MODEL
 
 # Ignore the deprecation warnings from docling
@@ -31,8 +25,8 @@ def test_document():
 @pytest.fixture(scope="module")
 def test_chunks(test_document):
     """Cache the chunks for all tests"""
-    chunker = create_chunker()
-    return list(chunk_document(test_document, chunker=chunker))
+    model = EmbeddingModel(model_id=TEST_MODEL_ID)
+    return list(chunk_document(test_document, tokenizer=model.tokenizer))
 
 
 def test_parse_pdf_returns_docling_document(test_document):
