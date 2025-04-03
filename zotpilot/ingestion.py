@@ -25,51 +25,32 @@ def parse_pdf(pdf_path: str | Path) -> DoclingDocument:
     return result.document
 
 
-def create_chunker(
-    tokenizer: AutoTokenizer | None = None,
-    max_tokens: int = 512,
-    merge_peers: bool = True,
-) -> HybridChunker:
-    """Create a document chunker with specified settings.
-
-    Args:
-        tokenizer: Tokenizer to use, will load default if None
-        max_tokens: Maximum tokens per chunk
-        merge_peers: Whether to merge peer chunks
-
-    Returns:
-        Configured chunker
-    """
-    if tokenizer is None:
-        embedding_model = EmbeddingModel()
-        tokenizer = embedding_model.tokenizer
-
-    if max_tokens > tokenizer.model_max_length:
-        raise ValueError(
-            f"Chunk size cannot exceed {tokenizer.model_max_length} tokens for this model"
-        )
-
-    return HybridChunker(
-        tokenizer=tokenizer,
-        max_tokens=max_tokens,
-        merge_peers=merge_peers,
-    )
-
-
 def chunk_document(
-    document: DoclingDocument, chunker: HybridChunker | None = None
+    document: DoclingDocument,
+    tokenizer: AutoTokenizer | None = None,
+    merge_peers: bool = True,
 ) -> Iterator[DocChunk]:
     """Chunk a document into semantic chunks.
 
     Args:
         document: Document to chunk
-        chunker: Chunker to use, will create default if None
+        tokenizer: Tokenizer to use, will load default if None
+        merge_peers: Whether to merge peer chunks. Default is True.
 
     Returns:
         Iterator of document chunks
     """
-    if chunker is None:
-        chunker = create_chunker()
+    if tokenizer is None:
+        embedding_model = EmbeddingModel()
+        tokenizer = embedding_model.tokenizer
+
+    max_tokens = tokenizer.model_max_length
+
+    chunker = HybridChunker(
+        tokenizer=tokenizer,
+        max_tokens=max_tokens,
+        merge_peers=merge_peers,
+    )
 
     return chunker.chunk(document)
 
@@ -88,8 +69,7 @@ def get_pdf_chunks(
         List of document chunks
     """
     document = parse_pdf(pdf_path)
-    chunker = create_chunker(tokenizer=model.tokenizer)
-    chunks = list(chunk_document(document, chunker=chunker))
+    chunks = list(chunk_document(document, tokenizer=model.tokenizer))
 
     return chunks
 
