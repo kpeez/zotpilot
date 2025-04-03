@@ -6,7 +6,7 @@ from docling.datamodel.document import DoclingDocument
 from docling.document_converter import DocumentConverter
 from transformers import AutoTokenizer
 
-from .embeddings import EmbeddingModel, get_chunk_embeddings
+from .embeddings import EmbeddingModel, embed_doc_chunks
 
 
 def parse_pdf(pdf_path: str | Path) -> DoclingDocument:
@@ -95,7 +95,9 @@ def get_pdf_chunks(
 
 
 def process_document(
-    pdf_path: str | Path, model_id: str | None = None, embedding_model: Any = None
+    pdf_path: str | Path,
+    model_id: str | None = None,
+    embedding_model: Any = None,
 ) -> dict[str, Any]:
     """Process a document to generate text and embeddings.
 
@@ -104,7 +106,7 @@ def process_document(
     Args:
         pdf_path: Path to the PDF file
         model_id: Model ID to use for tokenization and embeddings (ignored if model is provided)
-        embedding_model: Optional pre-initialized EmbeddingModel instance
+        embedding_model: Optional pre-initialized EmbeddingModel instance.
 
     Returns:
         Dictionary containing:
@@ -120,13 +122,14 @@ def process_document(
         embedding_model = EmbeddingModel(model_id=model_id)
 
     chunks = get_pdf_chunks(pdf_path, model=embedding_model)
-    chunk_texts, chunk_embeddings = get_chunk_embeddings(chunks, model=embedding_model)
+    chunk_texts, chunk_embeddings = embed_doc_chunks(chunks, model=embedding_model)
     chunk_metadata = [
         {
             "page": chunk.meta.doc_items[0].prov[0].page_no
             if chunk.meta.doc_items and chunk.meta.doc_items[0].prov
             else 0,
             "chunk_id": i,
+            "headings": chunk.meta.headings,
         }
         for i, chunk in enumerate(chunks)
     ]
