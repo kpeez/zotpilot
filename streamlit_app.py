@@ -1,18 +1,19 @@
+import hashlib
 import os
-import re
 import tempfile
 from pathlib import Path
 from typing import Any
 
 import streamlit as st
 
+from zotpilot.embeddings import EmbeddingModel
 from zotpilot.ingestion import process_document
-from zotpilot.llm import rag_pipeline
+from zotpilot.llm import get_openai_client, rag_pipeline
+from zotpilot.retrieval import format_response_with_citations
 from zotpilot.utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_TEMPERATURE
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# page config
 st.set_page_config(
     page_title="ZotPilot - Academic PDF Chat",
     page_icon="📚",
@@ -20,7 +21,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Define CSS for better UI
 st.markdown(
     """
 <style>
@@ -43,33 +43,32 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# start session state
-if "messages" not in st.session_state:
-    st.session_state.messages = []
 
-if "document_data" not in st.session_state:
-    st.session_state.document_data = None
+def initialize_session():
+    """Initialize all session state variables and models in one place."""
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-if "settings" not in st.session_state:
-    st.session_state.settings = {
-        "top_k": 5,
-        "temperature": DEFAULT_TEMPERATURE,
-        "max_tokens": DEFAULT_MAX_TOKENS,
-        "model": DEFAULT_MODEL,
-    }
+    if "document_data" not in st.session_state:
+        st.session_state.document_data = None
+
+    if "settings" not in st.session_state:
+        st.session_state.settings = {
+            "top_k": 5,
+            "temperature": DEFAULT_TEMPERATURE,
+            "max_tokens": DEFAULT_MAX_TOKENS,
+            "model": DEFAULT_MODEL,
+        }
+
+    if "embedding_model" not in st.session_state:
+        st.session_state.embedding_model = EmbeddingModel()
+
+    if "llm_client" not in st.session_state:
+        st.session_state.llm_client = get_openai_client()
+
 
 st.title("🤖 ZotPilot - Chat with your research library")
-
-
-def format_response_with_citations(response: str) -> str:
-    """Format the response with highlighted citations."""
-    citation_pattern = r"\[(\d+(?:,\s*\d+)*)\]"
-    formatted_response = re.sub(
-        citation_pattern,
-        lambda m: f'<span style="background-color: #e6f3ff; padding: 1px 4px; border-radius: 3px;">{m.group(0)}</span>',
-        response,
-    )
-    return formatted_response
+initialize_session()
 
 
 def format_retrieved_chunks_for_display(chunks: list[dict[str, Any]]) -> str:
@@ -93,7 +92,6 @@ def format_retrieved_chunks_for_display(chunks: list[dict[str, Any]]) -> str:
     return formatted_text
 
 
-# setup sidebar
 with st.sidebar:
     st.header("📄 Document")
 
@@ -111,32 +109,45 @@ with st.sidebar:
         )
 
         if current_doc_name != Path(uploaded_file.name).stem:
-            progress_bar = st.progress(0)
-            st.markdown("⏳ Processing document... This may take a moment.")
+            file_content = uploaded_file.getvalue()
+            content_hash = hashlib.md5(file_content).hexdigest()
+            # check if we already processed file
+            if (
+                hasattr(st.session_state, "last_processed_hash")
+                and st.session_state.last_processed_hash == content_hash
+            ):
+                st.success(f"Document already processed: {uploaded_file.name}")
+            else:
+                progress_bar = st.progress(0)
+                st.markdown("⏳ Processing document... This may take a moment.")
 
-            try:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                    tmp_file.write(uploaded_file.getvalue())
-                    pdf_path = tmp_file.name
+                try:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                        tmp_file.write(file_content)
+                        pdf_path = tmp_file.name
 
-                progress_bar.progress(10, "Preparing document...")
-                progress_bar.progress(20, "Parsing PDF document...")
-                progress_bar.progress(40, "Extracting text content...")
-                document_data = process_document(pdf_path)
-                progress_bar.progress(70, "Creating embeddings...")
-                progress_bar.progress(90, "Finalizing...")
+                    progress_bar.progress(10, "Preparing document...")
+                    progress_bar.progress(20, "Parsing PDF document...")
+                    progress_bar.progress(40, "Extracting text content...")
+                    document_data = process_document(
+                        pdf_path, embedding_model=st.session_state.embedding_model
+                    )
+                    progress_bar.progress(70, "Creating embeddings...")
+                    progress_bar.progress(90, "Finalizing...")
 
-                st.session_state.document_data = document_data
-                os.unlink(pdf_path)
-
-                progress_bar.progress(100, "Complete!")
-                st.success(f"Document processed: {uploaded_file.name}")
-                st.session_state.messages = []
-            except Exception as e:
-                progress_bar.progress(100, "Error!")
-                st.error(f"Error processing document: {e}")
-                if "pdf_path" in locals():
+                    st.session_state.document_data = document_data
+                    # save content hash to avoid reprocessing
+                    st.session_state.last_processed_hash = content_hash
                     os.unlink(pdf_path)
+
+                    progress_bar.progress(100, "Complete!")
+                    st.success(f"Document processed: {uploaded_file.name}")
+                    st.session_state.messages = []
+                except Exception as e:
+                    progress_bar.progress(100, "Error!")
+                    st.error(f"Error processing document: {e}")
+                    if "pdf_path" in locals():
+                        os.unlink(pdf_path)
 
     st.divider()
 
@@ -219,7 +230,6 @@ with st.sidebar:
             st.session_state.messages = []
             st.rerun()
 
-# Main content area
 if st.session_state.document_data is None:
     st.markdown("""
     ### 👋 Welcome to ZotPilot!
@@ -272,12 +282,14 @@ else:
 
                 response, retrieved_chunks = rag_pipeline(
                     query=user_query,
-                    document_data=document_data,
+                    document_data=st.session_state.document_data,
                     top_k=settings["top_k"],
                     model=settings["model"],
                     temperature=settings["temperature"],
                     max_tokens=settings["max_tokens"],
                     stream=False,
+                    embedding_model=st.session_state.embedding_model,
+                    client=st.session_state.llm_client,
                 )
 
                 formatted_response = format_response_with_citations(response)

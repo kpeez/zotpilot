@@ -3,8 +3,9 @@ from typing import Any, Generator
 
 from openai import OpenAI
 
+from .embeddings import EmbeddingModel
 from .ingestion import process_document
-from .retrieval import search_chunks
+from .retrieval import format_context, format_response_with_citations, similarity_search
 from .utils.config import get_openai_api_key, setup_openai_api_key
 from .utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_TEMPERATURE
 
@@ -158,8 +159,6 @@ def process_query(
     Returns:
         Generated response or streaming generator
     """
-    from .retrieval import format_context
-
     context = format_context(retrieved_results, include_metadata=True)
     if stream:
         return generate_streaming_response(
@@ -190,9 +189,11 @@ def rag_pipeline(
     temperature: float = DEFAULT_TEMPERATURE,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     stream: bool = False,
+    embedding_model: Any = None,
+    client: OpenAI | None = None,
     embedding_model_id: str | None = None,
     api_key: str | None = None,
-) -> str | Generator[str, None, None]:
+) -> tuple[str | Generator[str, None, None], list[dict[str, Any]]]:
     """
     Complete RAG pipeline that handles document processing, retrieval, and generation.
 
@@ -207,29 +208,35 @@ def rag_pipeline(
         temperature: Temperature parameter (0-1)
         max_tokens: Maximum tokens in response
         stream: Whether to stream the response
-        embedding_model_id: Model ID for embeddings
-        api_key: Optional API key for OpenAI
+        embedding_model: Optional pre-initialized embedding model (avoids recreation)
+        client: Optional pre-initialized OpenAI client (avoids recreation)
+        embedding_model_id: Model ID for embeddings (ignored if embedding_model provided)
+        api_key: Optional API key for OpenAI (ignored if client provided)
 
     Returns:
-        Generated response or streaming generator
+        Tuple of (generated response or streaming generator, retrieved results)
     """
-    # Create the client only once at the top level
-    client = get_openai_client(api_key)
+    if client is None:
+        client = get_openai_client(api_key)
+
+    if embedding_model is None:
+        embedding_model = EmbeddingModel(model_id=embedding_model_id)
 
     if document_data is None:
         if pdf_path is None:
             raise ValueError("Either document_data or pdf_path must be provided")
-        document_data = process_document(pdf_path, model_id=embedding_model_id)
 
-    retrieved_results = search_chunks(
-        query=query,
+        document_data = process_document(pdf_path, embedding_model=embedding_model)
+
+    query_embedding = embedding_model.embed_text([query])[0]
+    retrieved_results = similarity_search(
+        query_embedding=query_embedding,
         chunk_texts=document_data["chunk_texts"],
         chunk_embeddings=document_data["chunk_embeddings"],
         chunk_metadata=document_data["chunk_metadata"],
         top_k=top_k,
-        model_id=embedding_model_id,
     )
-    return process_query(
+    response = process_query(
         query=query,
         retrieved_results=retrieved_results,
         model=model,
@@ -238,3 +245,7 @@ def rag_pipeline(
         stream=stream,
         client=client,
     )
+
+    response = format_response_with_citations(response)
+
+    return response, retrieved_results
