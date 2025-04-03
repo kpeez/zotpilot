@@ -1,7 +1,7 @@
 import torch
 
 # Text extraction and embedding
-EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 CHUNK_MAX_TOKENS = 512
 BATCH_SIZE = 32
 DEVICE = "auto"
