@@ -63,10 +63,6 @@ def format_retrieved_chunks_for_display(chunks: list[dict[str, Any]]) -> str:
         page_num = chunk.get("metadata", {}).get("page", "Unknown page")
         text = chunk.get("text", "")
 
-        max_display_length = 300
-        if len(text) > max_display_length:
-            text = text[:max_display_length] + "..."
-
         formatted_text += f"**Source [{i + 1}]** (Page {page_num})\n\n"
         formatted_text += f"{text}\n\n---\n\n"
 
