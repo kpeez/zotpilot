@@ -2,14 +2,16 @@ import hashlib
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
 
 import streamlit as st
 
 from zotpilot.embeddings import EmbeddingModel
 from zotpilot.ingestion import process_document
 from zotpilot.llm import get_openai_client, rag_pipeline
-from zotpilot.retrieval import format_response_with_citations
+from zotpilot.utils.formatting import (
+    format_response_with_citations,
+    format_retrieved_chunks_for_display,
+)
 from zotpilot.utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_TEMPERATURE
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -69,27 +71,6 @@ def initialize_session():
 
 st.title("🤖 ZotPilot - Chat with your research library")
 initialize_session()
-
-
-def format_retrieved_chunks_for_display(chunks: list[dict[str, Any]]) -> str:
-    """Format retrieved chunks for display in the UI."""
-    if not chunks:
-        return "No sources retrieved."
-
-    formatted_text = "### Sources\n\n"
-    for i, chunk in enumerate(chunks):
-        page_num = chunk.get("metadata", {}).get("page", "Unknown page")
-        similarity = chunk.get("similarity", 0.0)
-        text = chunk.get("text", "")
-
-        max_display_length = 300
-        if len(text) > max_display_length:
-            text = text[:max_display_length] + "..."
-
-        formatted_text += f"**Source [{i + 1}]** (Page {page_num}, Relevance: {similarity:.2f})\n\n"
-        formatted_text += f"{text}\n\n---\n\n"
-
-    return formatted_text
 
 
 with st.sidebar:
