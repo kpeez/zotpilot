@@ -76,7 +76,7 @@ initialize_session()
 with st.sidebar:
     st.header("📄 Document")
 
-    st.markdown("Upload an academic PDF to start chatting with its content.")
+    st.markdown("Upload a PDF to start chatting with its content.")
 
     uploaded_file = st.file_uploader(
         "Choose a PDF file", type=["pdf"], help="Select a PDF file to upload and process"
@@ -92,7 +92,6 @@ with st.sidebar:
         if current_doc_name != Path(uploaded_file.name).stem:
             file_content = uploaded_file.getvalue()
             content_hash = hashlib.md5(file_content).hexdigest()
-            # check if we already processed file
             if (
                 hasattr(st.session_state, "last_processed_hash")
                 and st.session_state.last_processed_hash == content_hash
@@ -117,7 +116,6 @@ with st.sidebar:
                     progress_bar.progress(90, "Finalizing...")
 
                     st.session_state.document_data = document_data
-                    # save content hash to avoid reprocessing
                     st.session_state.last_processed_hash = content_hash
                     os.unlink(pdf_path)
 
@@ -225,24 +223,17 @@ if st.session_state.document_data is None:
 else:
     chat_container = st.container()
 
-    with st.expander("📚 View Sources", expanded=False):
-        if st.session_state.messages and any(
-            m["role"] == "assistant" for m in st.session_state.messages
-        ):
-            for message in reversed(st.session_state.messages):
-                if message["role"] == "assistant" and "sources" in message:
-                    sources_md = format_retrieved_chunks_for_display(message["sources"])
-                    st.markdown(sources_md, unsafe_allow_html=True)
-                    break
-        else:
-            st.info("No sources available yet. Ask a question to see sources.")
-
     with chat_container:
         if st.session_state.messages:
             for msg in st.session_state.messages:
                 with st.chat_message(msg["role"]):
                     if msg["role"] == "assistant":
                         st.markdown(msg["content"], unsafe_allow_html=True)
+
+                        if msg.get("sources"):
+                            with st.expander("📚 Sources", expanded=False):
+                                sources_md = format_retrieved_chunks_for_display(msg["sources"])
+                                st.markdown(sources_md, unsafe_allow_html=True)
                     else:
                         st.markdown(msg["content"])
         else:
@@ -256,7 +247,9 @@ else:
         with st.chat_message("user"):
             st.markdown(user_query)
 
-        with st.chat_message("assistant"), st.spinner("Thinking..."):
+        response_placeholder = st.empty()
+
+        with st.spinner("Generating response..."):
             try:
                 document_data = st.session_state.document_data
                 settings = st.session_state.settings
@@ -284,7 +277,13 @@ else:
                     }
                 )
 
-                st.markdown(formatted_response, unsafe_allow_html=True)
+                with response_placeholder.chat_message("assistant"):
+                    st.markdown(formatted_response, unsafe_allow_html=True)
+
+                    if retrieved_chunks:
+                        with st.expander("📚 View Sources for this response", expanded=False):
+                            sources_md = format_retrieved_chunks_for_display(retrieved_chunks)
+                            st.markdown(sources_md, unsafe_allow_html=True)
 
             except Exception as e:
                 error_message = f"Error: {e!s}"
@@ -293,3 +292,6 @@ else:
                 st.session_state.messages.append(
                     {"role": "assistant", "content": error_message, "sources": []}
                 )
+
+                with response_placeholder.chat_message("assistant"):
+                    st.error(error_message)
