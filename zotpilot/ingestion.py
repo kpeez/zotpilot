@@ -76,17 +76,15 @@ def get_pdf_chunks(
 
 def process_document(
     pdf_path: str | Path,
-    model_id: str | None = None,
-    embedding_model: Any = None,
+    embedding_model: EmbeddingModel,
 ) -> dict[str, Any]:
-    """Process a document to generate text and embeddings.
+    """Process a document to generate text and embeddings using a provided model.
 
     This function handles the full pipeline from raw PDF to text and embeddings.
 
     Args:
         pdf_path: Path to the PDF file
-        model_id: Model ID to use for tokenization and embeddings (ignored if model is provided)
-        embedding_model: Optional pre-initialized EmbeddingModel instance.
+        embedding_model: EmbeddingModel instance to use for tokenization and embeddings
 
     Returns:
         Dictionary containing:
@@ -96,10 +94,6 @@ def process_document(
         - chunk_embeddings: Tensor of chunk embeddings
     """
     collection_name = Path(pdf_path).stem
-    if embedding_model is None:
-        from .embeddings import EmbeddingModel
-
-        embedding_model = EmbeddingModel(model_id=model_id)
 
     chunks = get_pdf_chunks(pdf_path, model=embedding_model)
     chunk_texts, chunk_embeddings = embed_doc_chunks(chunks, model=embedding_model)
