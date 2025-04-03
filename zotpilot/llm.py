@@ -5,7 +5,7 @@ from openai import OpenAI
 
 from .embeddings import EmbeddingModel
 from .ingestion import process_document
-from .retrieval import format_context, similarity_search
+from .retrieval import format_context, format_response_with_citations, similarity_search
 from .utils.config import get_openai_api_key, setup_openai_api_key
 from .utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_TEMPERATURE
 
@@ -245,5 +245,7 @@ def rag_pipeline(
         stream=stream,
         client=client,
     )
+
+    response = format_response_with_citations(response)
 
     return response, retrieved_results
