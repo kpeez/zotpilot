@@ -4,7 +4,7 @@ import torch
 
 from zotpilot.embeddings import (
     EmbeddingModel,
-    get_chunk_embeddings,
+    embed_doc_chunks,
 )
 
 
@@ -68,7 +68,7 @@ def test_get_chunk_embeddings():
     mock_chunks = [mock_chunk1, mock_chunk2]
     mock_model = MagicMock()
     mock_model.embed_text.return_value = torch.tensor([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
-    texts, embeddings = get_chunk_embeddings(mock_chunks, model=mock_model)
+    texts, embeddings = embed_doc_chunks(mock_chunks, model=mock_model)
 
     assert len(texts) == len(mock_chunks)
     assert isinstance(embeddings, torch.Tensor)
