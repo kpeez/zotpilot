@@ -10,6 +10,7 @@ from zotpilot.llm import get_openai_client, rag_pipeline
 from zotpilot.utils.formatting import (
     format_response_with_citations,
     format_retrieved_chunks_for_display,
+    process_citations,
 )
 from zotpilot.utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_TEMPERATURE
 
@@ -277,7 +278,8 @@ else:
                 ]
                 settings = st.session_state.settings
 
-                response, retrieved_chunks = rag_pipeline(
+                # 1. Get raw response and all potentially relevant chunks
+                raw_llm_response, retrieved_chunks_all = rag_pipeline(
                     query=user_query,
                     document_data=active_doc_data,
                     top_k=settings["top_k"],
@@ -289,23 +291,33 @@ else:
                     client=st.session_state.llm_client,
                 )
 
-                formatted_response = format_response_with_citations(response)
+                # 2. Process citations: replace (Chunk X, Page Y) with [N] and filter chunks
+                processed_response, cited_chunks_filtered = process_citations(
+                    raw_llm_response, retrieved_chunks_all
+                )
 
+                # 3. Apply HTML highlighting to the processed response for display
+                formatted_response_html = format_response_with_citations(processed_response)
+
+                # 4. Store message history
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
-                        "content": formatted_response,
-                        "raw_content": response,
-                        "sources": retrieved_chunks,
+                        "content": formatted_response_html,  # Display content with HTML highlights
+                        "raw_content": raw_llm_response,  # Keep the original LLM output
+                        "sources": cited_chunks_filtered,  # Store only the cited sources
                     }
                 )
 
+                # 5. Display response and sources
                 with response_placeholder.chat_message("assistant"):
-                    st.markdown(formatted_response, unsafe_allow_html=True)
+                    st.markdown(formatted_response_html, unsafe_allow_html=True)
 
-                    if retrieved_chunks:
+                    # Use the filtered list of cited chunks
+                    if cited_chunks_filtered:
                         with st.expander("📚 Sources", expanded=False):
-                            sources_md = format_retrieved_chunks_for_display(retrieved_chunks)
+                            # This function already numbers sources as [1], [2]... based on list order
+                            sources_md = format_retrieved_chunks_for_display(cited_chunks_filtered)
                             st.markdown(sources_md, unsafe_allow_html=True)
 
             except Exception as e:
