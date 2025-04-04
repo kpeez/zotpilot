@@ -17,7 +17,7 @@ from zotpilot.utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_T
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 st.set_page_config(
-    page_title="ZotPilot - Academic PDF Chat",
+    page_title="Zotpilot - Academic PDF Chat",
     page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded",
