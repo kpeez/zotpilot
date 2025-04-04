@@ -6,7 +6,7 @@ from docling.datamodel.document import DoclingDocument
 from docling.document_converter import DocumentConverter
 from transformers import AutoTokenizer
 
-from .embeddings import EmbeddingModel, get_chunk_embeddings
+from .embeddings import EmbeddingModel, embed_doc_chunks
 
 
 def parse_pdf(pdf_path: str | Path) -> DoclingDocument:
@@ -25,51 +25,32 @@ def parse_pdf(pdf_path: str | Path) -> DoclingDocument:
     return result.document
 
 
-def create_chunker(
-    tokenizer: AutoTokenizer | None = None,
-    max_tokens: int = 512,
-    merge_peers: bool = True,
-) -> HybridChunker:
-    """Create a document chunker with specified settings.
-
-    Args:
-        tokenizer: Tokenizer to use, will load default if None
-        max_tokens: Maximum tokens per chunk
-        merge_peers: Whether to merge peer chunks
-
-    Returns:
-        Configured chunker
-    """
-    if tokenizer is None:
-        embedding_model = EmbeddingModel()
-        tokenizer = embedding_model.tokenizer
-
-    if max_tokens > tokenizer.model_max_length:
-        raise ValueError(
-            f"Chunk size cannot exceed {tokenizer.model_max_length} tokens for this model"
-        )
-
-    return HybridChunker(
-        tokenizer=tokenizer,
-        max_tokens=max_tokens,
-        merge_peers=merge_peers,
-    )
-
-
 def chunk_document(
-    document: DoclingDocument, chunker: HybridChunker | None = None
+    document: DoclingDocument,
+    tokenizer: AutoTokenizer | None = None,
+    merge_peers: bool = True,
 ) -> Iterator[DocChunk]:
     """Chunk a document into semantic chunks.
 
     Args:
         document: Document to chunk
-        chunker: Chunker to use, will create default if None
+        tokenizer: Tokenizer to use, will load default if None
+        merge_peers: Whether to merge peer chunks. Default is True.
 
     Returns:
         Iterator of document chunks
     """
-    if chunker is None:
-        chunker = create_chunker()
+    if tokenizer is None:
+        embedding_model = EmbeddingModel()
+        tokenizer = embedding_model.tokenizer
+
+    max_tokens = tokenizer.model_max_length
+
+    chunker = HybridChunker(
+        tokenizer=tokenizer,
+        max_tokens=max_tokens,
+        merge_peers=merge_peers,
+    )
 
     return chunker.chunk(document)
 
@@ -88,23 +69,22 @@ def get_pdf_chunks(
         List of document chunks
     """
     document = parse_pdf(pdf_path)
-    chunker = create_chunker(tokenizer=model.tokenizer)
-    chunks = list(chunk_document(document, chunker=chunker))
+    chunks = list(chunk_document(document, tokenizer=model.tokenizer))
 
     return chunks
 
 
 def process_document(
-    pdf_path: str | Path, model_id: str | None = None, embedding_model: Any = None
+    pdf_path: str | Path,
+    embedding_model: EmbeddingModel,
 ) -> dict[str, Any]:
-    """Process a document to generate text and embeddings.
+    """Process a document to generate text and embeddings using a provided model.
 
     This function handles the full pipeline from raw PDF to text and embeddings.
 
     Args:
         pdf_path: Path to the PDF file
-        model_id: Model ID to use for tokenization and embeddings (ignored if model is provided)
-        embedding_model: Optional pre-initialized EmbeddingModel instance
+        embedding_model: EmbeddingModel instance to use for tokenization and embeddings
 
     Returns:
         Dictionary containing:
@@ -114,19 +94,16 @@ def process_document(
         - chunk_embeddings: Tensor of chunk embeddings
     """
     collection_name = Path(pdf_path).stem
-    if embedding_model is None:
-        from .embeddings import EmbeddingModel
-
-        embedding_model = EmbeddingModel(model_id=model_id)
 
     chunks = get_pdf_chunks(pdf_path, model=embedding_model)
-    chunk_texts, chunk_embeddings = get_chunk_embeddings(chunks, model=embedding_model)
+    chunk_texts, chunk_embeddings = embed_doc_chunks(chunks, model=embedding_model)
     chunk_metadata = [
         {
             "page": chunk.meta.doc_items[0].prov[0].page_no
             if chunk.meta.doc_items and chunk.meta.doc_items[0].prov
             else 0,
             "chunk_id": i,
+            "headings": chunk.meta.headings,
         }
         for i, chunk in enumerate(chunks)
     ]

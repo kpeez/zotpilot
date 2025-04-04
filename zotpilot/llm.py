@@ -5,8 +5,9 @@ from openai import OpenAI
 
 from .embeddings import EmbeddingModel
 from .ingestion import process_document
-from .retrieval import format_context, format_response_with_citations, similarity_search
+from .retrieval import similarity_search
 from .utils.config import get_openai_api_key, setup_openai_api_key
+from .utils.formatting import format_context, format_response_with_citations
 from .utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_TEMPERATURE
 
 

@@ -72,7 +72,7 @@ class EmbeddingModel:
         return embeddings
 
 
-def get_chunk_embeddings(
+def embed_doc_chunks(
     chunks: Iterable[DocChunk],
     model: EmbeddingModel,
 ) -> tuple[list[str], torch.Tensor]:

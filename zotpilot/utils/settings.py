@@ -1,13 +1,13 @@
 import torch
 
 # Text extraction and embedding
-EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 CHUNK_MAX_TOKENS = 512
 BATCH_SIZE = 32
 DEVICE = "auto"
 # LLM
 DEFAULT_MODEL = "gpt-4o"
-DEFAULT_TEMPERATURE = 0.3
+DEFAULT_TEMPERATURE = 0.7
 DEFAULT_MAX_TOKENS = 1000
 
 

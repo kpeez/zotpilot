@@ -1,13 +1,8 @@
-from unittest.mock import MagicMock, patch
-
 import pytest
 import torch
 
-from zotpilot.retrieval import (
-    format_context,
-    search_chunks,
-    similarity_search,
-)
+from zotpilot.retrieval import similarity_search
+from zotpilot.utils.formatting import format_context
 
 
 def test_similarity_search():
@@ -66,58 +61,6 @@ def test_similarity_search():
     )
 
     assert len(empty_results) == 0
-
-
-@patch("zotpilot.retrieval.EmbeddingModel")
-def test_search_chunks(mock_embedding_model_cls):
-    """Test the search_chunks function with mocked embeddings"""
-    mock_embedding_model = MagicMock()
-    mock_embedding_model_cls.return_value = mock_embedding_model
-    # test data: unit vector in x direction
-    mock_query_embedding = torch.tensor([1.0, 0.0, 0.0])
-    # configure the mock to return the tensor directly when indexed
-    embeddings_tensor = torch.stack([mock_query_embedding])
-    mock_embedding_model.embed_text.return_value = embeddings_tensor
-    # test data
-    chunk_texts = ["Document A", "Document B", "Document C"]
-    chunk_embeddings = torch.tensor(
-        [
-            [1.0, 0.0, 0.0],  # perfect
-            [0.0, 1.0, 0.0],  # orthogonal
-            [0.7, 0.7, 0.0],  # partial
-        ]
-    )
-    chunk_metadata = [
-        {"page": 1},
-        {"page": 2},
-        {"page": 3},
-    ]
-
-    # test search_chunks
-    results = search_chunks(
-        query="test query",
-        chunk_texts=chunk_texts,
-        chunk_embeddings=chunk_embeddings,
-        chunk_metadata=chunk_metadata,
-        top_k=2,
-    )
-
-    mock_embedding_model_cls.assert_called_once_with(model_id=None)
-    mock_embedding_model.embed_text.assert_called_once_with(["test query"])
-
-    assert len(results) == 2
-    assert results[0]["text"] == "Document A"
-    assert results[1]["text"] == "Document C"
-
-    # test with custom model_id
-    search_chunks(
-        query="test query",
-        chunk_texts=chunk_texts,
-        chunk_embeddings=chunk_embeddings,
-        chunk_metadata=chunk_metadata,
-        model_id="custom-model",
-    )
-    mock_embedding_model_cls.assert_called_with(model_id="custom-model")
 
 
 def test_format_context():
