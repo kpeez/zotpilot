@@ -53,14 +53,14 @@ def process_citations(
     citation_pattern = re.compile(r"\((?:Chunk|Source)\s*(\d+)[,\s]*Page\s*(\d+)\)")
 
     cited_chunk_indices: list[int] = []
-    # map original chunk index to citation number [1], [2]...
+    # map original chunk index -> citation number [1], [2]...
     unique_citations: dict[int, int] = {}
-    # map full citation string to footnote string e.g. "(Chunk 1, Page 5)" -> "[1]"
+    # map full citation string -> footnote string e.g. "(Chunk 1, Page 5)" -> "[1]"
     citation_map: dict[str, str] = {}
 
     def replace_citation(match: re.Match) -> str:
-        # page number is not directly used for mapping, but captured
-        full_match, chunk_num_str, page_num_str = match.groups()
+        # get the full matched string, e.g., "(Chunk 1, Page 5)"
+        full_match, chunk_num_str, _page_num_str = match.group(0), match.group(1), match.group(2)
 
         try:
             # convert Docling's 1-based chunk index to 0-based for list access
