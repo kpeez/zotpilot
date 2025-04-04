@@ -1,7 +1,6 @@
 import hashlib
 import os
 import tempfile
-from pathlib import Path
 
 import streamlit as st
 
@@ -26,12 +25,6 @@ st.set_page_config(
 st.markdown(
     """
 <style>
-    .document-card {
-        background-color: #f0f2f6;
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 10px;
-    }
     .stButton button {
         width: 100%;
     }
@@ -51,8 +44,21 @@ def initialize_session():
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    if "document_data" not in st.session_state:
-        st.session_state.document_data = None
+    if "processed_documents" not in st.session_state:
+        # stores hash -> {processed data dict from process_document()}
+        st.session_state.processed_documents = {}
+    if "filenames" not in st.session_state:
+        # stores hash -> original filename string
+        st.session_state.filenames = {}
+    if "active_document_hash" not in st.session_state:
+        # hash of the currently selected doc for chatting
+        st.session_state.active_document_hash = None
+
+    # remove single-document state variables if they exist from previous runs
+    if "document_data" in st.session_state:
+        del st.session_state["document_data"]
+    if "last_processed_hash" in st.session_state:
+        del st.session_state["last_processed_hash"]
 
     if "settings" not in st.session_state:
         st.session_state.settings = {
@@ -76,27 +82,26 @@ initialize_session()
 with st.sidebar:
     st.header("📄 Document")
 
-    st.markdown("Upload a PDF to start chatting with its content.")
+    with st.expander("Upload Document", expanded=True):
+        st.markdown("Upload a PDF to start chatting with its content.")
 
-    uploaded_file = st.file_uploader(
-        "Choose a PDF file", type=["pdf"], help="Select a PDF file to upload and process"
-    )
-
-    if uploaded_file is not None:
-        current_doc_name = (
-            st.session_state.document_data.get("collection_name", None)
-            if st.session_state.document_data
-            else None
+        uploaded_file = st.file_uploader(
+            "Choose a PDF file", type=["pdf"], help="Select a PDF file to upload and process"
         )
 
-        if current_doc_name != Path(uploaded_file.name).stem:
+        if uploaded_file is not None:
+            original_filename = uploaded_file.name
             file_content = uploaded_file.getvalue()
             content_hash = hashlib.md5(file_content).hexdigest()
-            if (
-                hasattr(st.session_state, "last_processed_hash")
-                and st.session_state.last_processed_hash == content_hash
-            ):
-                st.success(f"Document already processed: {uploaded_file.name}")
+
+            # check if document is already processed
+            if content_hash in st.session_state.processed_documents:
+                st.success(f"Document already processed: {original_filename}")
+                # if it's not the active one, make it active and clear chat
+                if st.session_state.active_document_hash != content_hash:
+                    st.session_state.active_document_hash = content_hash
+                    st.session_state.messages = []
+                    st.rerun()  # rerun to reflect the change in active doc and clear chat
             else:
                 progress_bar = st.progress(0)
                 st.markdown("⏳ Processing document... This may take a moment.")
@@ -109,53 +114,68 @@ with st.sidebar:
                     progress_bar.progress(10, "Preparing document...")
                     progress_bar.progress(20, "Parsing PDF document...")
                     progress_bar.progress(40, "Extracting text content...")
+
                     document_data = process_document(
                         pdf_path, embedding_model=st.session_state.embedding_model
                     )
                     progress_bar.progress(70, "Creating embeddings...")
                     progress_bar.progress(90, "Finalizing...")
 
-                    st.session_state.document_data = document_data
-                    st.session_state.last_processed_hash = content_hash
+                    st.session_state.processed_documents[content_hash] = document_data
+                    st.session_state.filenames[content_hash] = original_filename
+                    st.session_state.active_document_hash = content_hash
                     os.unlink(pdf_path)
 
                     progress_bar.progress(100, "Complete!")
-                    st.success(f"Document processed: {uploaded_file.name}")
+                    st.success(f"Document processed: {original_filename}")
                     st.session_state.messages = []
+                    st.rerun()
                 except Exception as e:
                     progress_bar.progress(100, "Error!")
                     st.error(f"Error processing document: {e}")
                     if "pdf_path" in locals():
                         os.unlink(pdf_path)
 
-    st.divider()
+    if st.session_state.processed_documents:
+        with st.expander("Processed Documents", expanded=True):
+            st.header("📚 Processed Documents")
 
-    if st.session_state.document_data is not None:
-        st.markdown(
-            """
-        <div class="document-card">
-            <h3>📝 Current Document</h3>
-        """,
-            unsafe_allow_html=True,
-        )
+            doc_options = {st.session_state.filenames[h]: h for h in st.session_state.filenames}
+            active_filename = st.session_state.filenames.get(st.session_state.active_document_hash)
+            active_index = list(doc_options.keys()).index(active_filename) if active_filename else 0
 
-        doc_name = st.session_state.document_data.get("collection_name", "Unknown")
-        num_chunks = len(st.session_state.document_data.get("chunk_texts", []))
+            selected_filename = st.radio(
+                "Select document to chat with:",
+                options=list(doc_options.keys()),
+                index=active_index,
+                key="doc_selector",
+            )
 
-        st.markdown(f"**Title:** {doc_name}")
-        st.markdown(f"**Total Chunks:** {num_chunks}")
+            selected_hash = doc_options[selected_filename]
 
-        with st.expander("Preview document chunks"):
-            for i, chunk in enumerate(st.session_state.document_data.get("chunk_texts", [])[:5]):
-                st.markdown(f"**Chunk {i + 1}**")
-                st.text(chunk[:200] + "..." if len(chunk) > 200 else chunk)
+            if st.session_state.active_document_hash != selected_hash:
+                st.session_state.active_document_hash = selected_hash
+                st.session_state.messages = []
+                st.rerun()
 
-            if num_chunks > 5:
-                st.markdown(f"*...and {num_chunks - 5} more chunks*")
+            active_doc_data = st.session_state.processed_documents[
+                st.session_state.active_document_hash
+            ]
+            num_chunks = len(active_doc_data.get("chunk_texts", []))
 
-        st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown(f"**Active:** {selected_filename}")
+            st.markdown(f"**Total Chunks:** {num_chunks}")
+
+            show_chunks = st.checkbox("Show document chunks preview", value=False)
+            if show_chunks:
+                for i, chunk in enumerate(active_doc_data.get("chunk_texts", [])[:5]):
+                    st.markdown(f"**Chunk {i + 1}**")
+                    st.text(chunk[:200] + "..." if len(chunk) > 200 else chunk)
+                if num_chunks > 5:
+                    st.markdown(f"*...and {num_chunks - 5} more chunks*")
     else:
-        st.info("No document loaded. Please upload a PDF file to start.")
+        with st.expander("Current Document", expanded=False):
+            st.info("No document loaded. Please upload a PDF file to start.")
 
     st.divider()
 
@@ -179,7 +199,7 @@ with st.sidebar:
         temperature = st.slider(
             "Temperature",
             min_value=0.0,
-            max_value=1.0,
+            max_value=2.0,
             value=st.session_state.settings["temperature"],
             step=0.1,
             help="Higher values make output more creative, lower values more deterministic",
@@ -205,21 +225,23 @@ with st.sidebar:
 
     with col2:
         if st.button("🔄 Reset All"):
-            st.session_state.document_data = None
+            st.session_state.processed_documents = {}
             st.session_state.messages = []
             st.rerun()
 
-if st.session_state.document_data is None:
+if not st.session_state.processed_documents:
     st.markdown("""
     ### 👋 Welcome to ZotPilot!
 
     To get started:
-    1. Upload a PDF using the sidebar
-    2. Wait for the document to be processed
+    1. Upload one or more PDFs using the sidebar
+    2. Select the document you want to chat with
     3. Ask questions about the document content
 
-    ZotPilot will use AI to retrieve relevant information and provide answers based on the document.
+    ZotPilot will use AI to retrieve relevant information and provide answers based on the selected document.
     """)
+elif st.session_state.active_document_hash is None and st.session_state.processed_documents:
+    st.info("Please select a document from the sidebar to start chatting.")
 else:
     chat_container = st.container()
 
@@ -229,17 +251,16 @@ else:
                 with st.chat_message(msg["role"]):
                     if msg["role"] == "assistant":
                         st.markdown(msg["content"], unsafe_allow_html=True)
-
                         if msg.get("sources"):
                             with st.expander("📚 Sources", expanded=False):
                                 sources_md = format_retrieved_chunks_for_display(msg["sources"])
                                 st.markdown(sources_md, unsafe_allow_html=True)
                     else:
                         st.markdown(msg["content"])
-        else:
-            st.info("Chat is empty. Ask a question about the document to begin.")
 
-    user_query = st.chat_input("Ask a question about the document")
+    user_query = st.chat_input(
+        f"Ask a question about {st.session_state.filenames[st.session_state.active_document_hash]}"
+    )
 
     if user_query:
         st.session_state.messages.append({"role": "user", "content": user_query})
@@ -251,12 +272,14 @@ else:
 
         with st.spinner("Generating response..."):
             try:
-                document_data = st.session_state.document_data
+                active_doc_data = st.session_state.processed_documents[
+                    st.session_state.active_document_hash
+                ]
                 settings = st.session_state.settings
 
                 response, retrieved_chunks = rag_pipeline(
                     query=user_query,
-                    document_data=st.session_state.document_data,
+                    document_data=active_doc_data,
                     top_k=settings["top_k"],
                     model=settings["model"],
                     temperature=settings["temperature"],
@@ -281,7 +304,7 @@ else:
                     st.markdown(formatted_response, unsafe_allow_html=True)
 
                     if retrieved_chunks:
-                        with st.expander("📚 View Sources for this response", expanded=False):
+                        with st.expander("📚 Sources", expanded=False):
                             sources_md = format_retrieved_chunks_for_display(retrieved_chunks)
                             st.markdown(sources_md, unsafe_allow_html=True)
 
