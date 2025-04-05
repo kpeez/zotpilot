@@ -4,20 +4,20 @@ import tempfile
 
 import streamlit as st
 
-from zotpilot.embeddings import EmbeddingModel
-from zotpilot.ingestion import process_document
-from zotpilot.llm import get_openai_client, rag_pipeline
-from zotpilot.utils.formatting import (
+from paperchat.embeddings import EmbeddingModel
+from paperchat.ingestion import process_document
+from paperchat.llm import get_openai_client, rag_pipeline
+from paperchat.utils.formatting import (
     format_response_with_citations,
     format_retrieved_chunks_for_display,
     process_citations,
 )
-from zotpilot.utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_TEMPERATURE
+from paperchat.utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_TEMPERATURE
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 st.set_page_config(
-    page_title="Zotpilot - Academic PDF Chat",
+    page_title="PaperChat - PDF Chat",
     page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -76,7 +76,7 @@ def initialize_session():
         st.session_state.llm_client = get_openai_client()
 
 
-st.title("🤖 ZotPilot - Chat with your research library")
+st.title("🤖 PaperChat - Chat with your research library")
 initialize_session()
 
 
@@ -232,14 +232,14 @@ with st.sidebar:
 
 if not st.session_state.processed_documents:
     st.markdown("""
-    ### 👋 Welcome to ZotPilot!
+    ### 👋 Welcome to PaperChat!
 
     To get started:
     1. Upload one or more PDFs using the sidebar
     2. Select the document you want to chat with
     3. Ask questions about the document content
 
-    ZotPilot will use AI to retrieve relevant information and provide answers based on the selected document.
+    PaperChat will use AI to retrieve relevant information and provide answers based on the selected document.
     """)
 elif st.session_state.active_document_hash is None and st.session_state.processed_documents:
     st.info("Please select a document from the sidebar to start chatting.")

@@ -4,9 +4,9 @@ import pytest
 import torch
 from docling.datamodel.document import DoclingDocument
 
-from zotpilot.embeddings import EmbeddingModel
-from zotpilot.ingestion import chunk_document, get_pdf_chunks, parse_pdf, process_document
-from zotpilot.utils.settings import EMBEDDING_MODEL
+from paperchat.embeddings import EmbeddingModel
+from paperchat.ingestion import chunk_document, get_pdf_chunks, parse_pdf, process_document
+from paperchat.utils.settings import EMBEDDING_MODEL
 
 # Ignore the deprecation warnings from docling
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
