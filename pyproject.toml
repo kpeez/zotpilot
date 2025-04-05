@@ -1,11 +1,11 @@
 [project]
-name = "zotpilot"
+name = "paperchat"
 version = "0.1.0"
-description = "An AI-powered copilot for Zotero that enables you to chat with your research library."
+description = "An AI-powered assistant that enables you to chat with your research library."
 authors = [{ name="Kyle Puhger", email="kpuhger@gmail.com" }]
 readme = "README.md"
 license = { text = "MIT" }
-keywords = ["zotero", "chat", "research"]
+keywords = ["chat", "research"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -31,10 +31,10 @@ dev = [
 ]
 
 [project.scripts]
-zotpilot = "zotpilot.cli:main"
+paperchat = "paperchat.cli:main"
 
 [project.urls]
-"Homepage" = "https://github.com/kpeez/zotpilot"
+"Homepage" = "https://github.com/kpeez/paperchat"
 
 [build-system]
 requires = ["hatchling"]
