@@ -2,15 +2,15 @@ from unittest.mock import MagicMock, patch
 
 import torch
 
-from zotpilot.embeddings import (
+from paperchat.embeddings import (
     EmbeddingModel,
     embed_doc_chunks,
 )
 
 
-@patch("zotpilot.embeddings.SentenceTransformer")
-@patch("zotpilot.embeddings.AutoTokenizer")
-@patch("zotpilot.embeddings.get_device", return_value="cpu")
+@patch("paperchat.embeddings.SentenceTransformer")
+@patch("paperchat.embeddings.AutoTokenizer")
+@patch("paperchat.embeddings.get_device", return_value="cpu")
 def test_embedding_model(mock_get_device, mock_tokenizer_cls, mock_sentence_transformer_cls):
     """Test basic functionality of EmbeddingModel"""
     # Setup mocks
@@ -29,9 +29,9 @@ def test_embedding_model(mock_get_device, mock_tokenizer_cls, mock_sentence_tran
     assert result.shape[0] == len(texts)  # one embedding per text
 
 
-@patch("zotpilot.embeddings.SentenceTransformer")
-@patch("zotpilot.embeddings.AutoTokenizer")
-@patch("zotpilot.embeddings.get_device", return_value="cpu")
+@patch("paperchat.embeddings.SentenceTransformer")
+@patch("paperchat.embeddings.AutoTokenizer")
+@patch("paperchat.embeddings.get_device", return_value="cpu")
 def test_embedding_model_string_vs_list(
     mock_get_device, mock_tokenizer_cls, mock_sentence_transformer_cls
 ):

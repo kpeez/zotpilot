@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from zotpilot.retrieval import similarity_search
-from zotpilot.utils.formatting import format_context
+from paperchat.retrieval import similarity_search
+from paperchat.utils.formatting import format_context
 
 
 def test_similarity_search():

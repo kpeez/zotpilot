@@ -1,42 +1,42 @@
-# Zotpilot
+# PaperChat
 
-An AI-powered copilot for Zotero that enables you to chat with your research library.
+An AI-powered assistant that enables you to chat with your research library.
 
 ## Installation
 
-The easiest and fastest way to install ZotPilot is using [uv](https://github.com/astral-sh/uv):
+The easiest and fastest way to install PaperChat is using [uv](https://github.com/astral-sh/uv):
 
 ```bash
-uv tool install git+https://github.com/kpeez/zotpilot.git
+uv tool install git+https://github.com/kpeez/paperchat.git
 ```
 
-This will install ZotPilot and make it available as a command-line tool.
+This will install PaperChat and make it available as a command-line tool.
 
-To launch ZotPilot, run:
+To launch PaperChat, run:
 
 ```bash
-zotpilot
+paperchat
 ```
 
-Alternatively, you can install ZotPilot into your Python environment (requires Python 3.12 or newer):
+Alternatively, you can install PaperChat into your Python environment (requires Python 3.12 or newer):
 
 ```bash
-pip install git+https://github.com/kpeez/zotpilot.git
+pip install git+https://github.com/kpeez/paperchat.git
 ```
 
-and then launch ZotPilot by running:
+and then launch PaperChat by running:
 
 ```bash
-zotpilot
+paperchat
 ```
 
 ## Quick Start
 
-1. Launch Zotpilot: `zotpilot`
+1. Launch PaperChat: `paperchat`
 2. Upload a PDF document using the sidebar
 3. Wait for processing to complete
 4. Start asking questions about your document!
 
 ## Troubleshooting
 
-- Report issues on our [GitHub Issues page](https://github.com/kpeez/zotpilot/issues)
+- Report issues on our [GitHub Issues page](https://github.com/kpeez/paperchat/issues)

@@ -1,5 +1,5 @@
 """
-Configuration utilities for ZotPilot.
+Configuration utilities.
 """
 
 import json
@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 # Constants
-CONFIG_DIR = Path.home() / ".zotpilot"
+CONFIG_DIR = Path.home() / ".paperchat"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 
@@ -55,7 +55,7 @@ def setup_openai_api_key() -> str:
     print("To use AI features, we need an OpenAI API key.")
     print("You can either:")
     print("1. Set the OPENAI_API_KEY environment variable, or")
-    print("2. Enter your API key now to save in ~/.zotpilot/config.json")
+    print("2. Enter your API key now to save in ~/.paperchat/config.json")
 
     try:
         from getpass import getpass
