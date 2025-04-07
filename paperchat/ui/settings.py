@@ -2,7 +2,7 @@
 Settings UI components for Streamlit.
 """
 
-from typing import Callable, Optional
+from typing import Callable
 
 import streamlit as st
 
@@ -10,52 +10,43 @@ from paperchat.ui.api_settings import render_api_key_manager
 from paperchat.ui.common import render_page_header, show_info
 from paperchat.utils.config import get_api_key, get_available_providers
 
+PROVIDER_MODELS = {
+    "openai": ["gpt-4o", "gpt-4o-mini"],
+    "anthropic": ["claude-3.7-sonnet", "claude-3.5-sonnet", "claude-3.5-haiku"],
+    # TODO: add gemini models
+}
 
-def render_model_settings(provider: str):
+
+def render_model_settings(provider: str) -> None:
     """
     Render model-specific settings UI for a provider.
 
     Args:
         provider: Provider name (e.g., "openai")
     """
-    if provider == "openai":
+    provider = provider.lower()
+    models = PROVIDER_MODELS.get(provider, [])
+    if models:
         st.selectbox(
             "Default model",
-            ["gpt-4o", "gpt-3.5-turbo"],
+            models,
             help="Select which model to use by default",
-            key="openai_default_model",
+            key=f"{provider}_default_model",
         )
 
-        st.slider(
-            "Temperature",
-            min_value=0.0,
-            max_value=2.0,
-            value=0.7,
-            step=0.1,
-            help="Controls randomness in responses: 0=deterministic, 1=creative",
-            key="openai_temperature",
-        )
-
-    elif provider == "anthropic":
-        st.selectbox(
-            "Default model",
-            ["claude-3-opus", "claude-3-sonnet", "claude-3-haiku"],
-            help="Select which model to use by default",
-            key="anthropic_default_model",
-        )
-
-        st.slider(
-            "Temperature",
-            min_value=0.0,
-            max_value=2.0,
-            value=0.7,
-            step=0.1,
-            help="Controls randomness in responses: 0=deterministic, 1=creative",
-            key="anthropic_temperature",
-        )
+    # temperature setting (common across providers)
+    st.slider(
+        "Temperature",
+        min_value=0.0,
+        max_value=2.0,
+        value=0.7,
+        step=0.1,
+        help="Controls randomness in responses: 0=deterministic, 1=creative",
+        key=f"{provider}_temperature",
+    )
 
 
-def render_provider_settings(provider: str, on_save_callback: Optional[Callable] = None):
+def render_provider_settings(provider: str, on_save_callback: Callable | None = None):
     """
     Render settings for a specific provider, including API key and model settings.
 
@@ -63,16 +54,12 @@ def render_provider_settings(provider: str, on_save_callback: Optional[Callable]
         provider: Provider name (e.g., "openai")
         on_save_callback: Function to call after saving settings
     """
-    # API key management
     api_key_configured = render_api_key_manager(provider, on_save_callback)
-
-    # Only show model settings if API key is configured
     if api_key_configured:
         st.divider()
         st.subheader("Model Settings")
         render_model_settings(provider)
 
-    # Add provider-specific help/links
     st.divider()
     if provider == "openai":
         st.markdown("[Get an OpenAI API key](https://platform.openai.com/api-keys)")
@@ -80,7 +67,7 @@ def render_provider_settings(provider: str, on_save_callback: Optional[Callable]
         st.markdown("[Get an Anthropic API key](https://console.anthropic.com/)")
 
 
-def render_settings_tabs(on_save_callback: Optional[Callable] = None):
+def render_settings_tabs(on_save_callback: Callable | None = None):
     """
     Render settings as tabs, one for each provider.
 
@@ -93,17 +80,15 @@ def render_settings_tabs(on_save_callback: Optional[Callable] = None):
         show_info("No API providers configured.")
         return
 
-    # Create tabs for each provider
     tab_labels = [provider.capitalize() for provider in providers]
     tabs = st.tabs(tab_labels)
 
-    # Fill each tab with provider settings
     for i, provider in enumerate(providers):
         with tabs[i]:
             render_provider_settings(provider, on_save_callback)
 
 
-def render_settings_page(on_save_callback: Optional[Callable] = None):
+def render_settings_page(on_save_callback: Callable | None = None):
     """
     Render a complete settings page.
 
@@ -112,7 +97,6 @@ def render_settings_page(on_save_callback: Optional[Callable] = None):
     """
     render_page_header("Settings", "Configure API keys and model settings for PaperChat")
 
-    # Check if any keys are configured
     providers = get_available_providers()
     any_key_configured = any(get_api_key(provider) for provider in providers)
 
@@ -122,7 +106,7 @@ def render_settings_page(on_save_callback: Optional[Callable] = None):
     render_settings_tabs(on_save_callback)
 
 
-def render_settings_modal(on_close_callback: Optional[Callable] = None):
+def render_settings_modal(on_close_callback: Callable | None = None):
     """
     Render settings as a modal overlay.
 
@@ -132,5 +116,4 @@ def render_settings_modal(on_close_callback: Optional[Callable] = None):
     Args:
         on_close_callback: Function to call when modal is closed
     """
-    # This would use st.experimental_dialog or similar when available
     render_settings_page(on_close_callback)
