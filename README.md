@@ -37,6 +37,10 @@ paperchat
 3. Wait for processing to complete
 4. Start asking questions about your document!
 
+## Settings
+
+PaperChat uses your own model API keys to connect to the AI providers. If you have API keys set as environment variables, they will be automatically detected. Otherwise, you can set them in the settings page.
+
 ## Troubleshooting
 
 - Report issues on our [GitHub Issues page](https://github.com/kpeez/paperchat/issues)
