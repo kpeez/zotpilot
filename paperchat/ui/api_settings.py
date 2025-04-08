@@ -21,7 +21,7 @@ def render_api_key_form(
     provider: str,
     on_save_callback: Callable | None = None,
     key_suffix: str = "",
-):
+) -> bool:
     """
     Render a form for entering and saving an API key.
 
@@ -89,20 +89,22 @@ def render_api_key_manager(
     if show_header:
         st.subheader(f"{provider_name} API Key")
 
-    # check if key exists
+    # Check if key exists
     api_key = get_api_key(provider)
 
     if api_key:
-        # show masked key
+        # Show masked key
         masked_key = mask_api_key(api_key)
         st.success(f"✅ {provider_name} API key is configured")
-        # option to update key
+
+        # Option to update
         st.markdown(f"Current key: `{masked_key}`")
         if st.checkbox(f"Change {provider_name} API key", key=f"change_{provider}_key{key_suffix}"):
             return render_api_key_form(
                 provider, on_save_callback, key_suffix=f"_change{key_suffix}"
             )
-        # option to remove key
+
+        # Option to remove
         if st.button(
             f"Remove {provider_name} API key",
             key=f"remove_{provider}_key{key_suffix}",
@@ -119,7 +121,7 @@ def render_api_key_manager(
 
         return True
     else:
-        # no key configured, show input form
+        # No key configured, show input form
         show_info(f"No {provider_name} API key configured")
         return render_api_key_form(provider, on_save_callback, key_suffix)
 
@@ -127,7 +129,7 @@ def render_api_key_manager(
 def render_api_keys_section(
     on_save_callback: Callable | None = None,
     providers: list[str] | None = None,
-):
+) -> None:
     """
     Render a section with API key management for all or specified providers.
 
