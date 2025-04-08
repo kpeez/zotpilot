@@ -7,7 +7,13 @@ from typing import Callable
 import streamlit as st
 
 from paperchat.ui.api_settings import render_api_key_manager
-from paperchat.ui.common import render_page_header, show_info, show_warning
+from paperchat.ui.common import (
+    render_page_header,
+    show_error,
+    show_info,
+    show_success,
+    show_warning,
+)
 from paperchat.utils.config import get_api_key, get_available_providers
 
 PROVIDER_MODELS = {
@@ -256,6 +262,153 @@ def render_settings_tabs(on_save_callback: Callable | None = None) -> None:
             render_provider_settings(provider, on_save_callback)
 
 
+def _handle_api_key_actions(provider: str) -> bool:
+    """
+    Handle API key actions like adding, changing, or removing a key.
+
+    Args:
+        provider: Provider name
+
+    Returns:
+        True if the UI needs to be rerun
+    """
+    is_configured = get_api_key(provider) is not None
+    col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
+
+    with col1:
+        st.markdown(f"**{provider.lower()}**")
+
+    with col2:
+        st.markdown(f"**{provider}**")
+
+    with col3:
+        if is_configured:
+            from paperchat.utils.config import mask_api_key
+
+            masked_key = mask_api_key(get_api_key(provider))
+            st.code(masked_key, language=None)
+        else:
+            st.markdown("🔑 *Not configured*")
+
+    with col4:
+        if is_configured:
+            if st.button("Change", key=f"change_{provider}_btn"):
+                st.session_state[f"show_{provider}_form"] = True
+
+            if st.button("Remove", key=f"remove_{provider}_btn"):
+                from paperchat.utils.config import remove_api_key
+
+                success, message = remove_api_key(provider)
+                if success:
+                    show_success(message)
+                    return True
+                else:
+                    show_error(message)
+        elif st.button("Add Key", key=f"add_{provider}_btn"):
+            st.session_state[f"show_{provider}_form"] = True
+
+    if st.session_state.get(f"show_{provider}_form", False):
+        with st.expander(f"Configure {provider.capitalize()} API Key", expanded=True):
+            from paperchat.ui.api_settings import render_api_key_form
+
+            if render_api_key_form(provider, on_save_callback=lambda: st.rerun()):
+                st.session_state[f"show_{provider}_form"] = False
+                return True
+
+            if st.button("Cancel", key=f"cancel_{provider}_form"):
+                st.session_state[f"show_{provider}_form"] = False
+                return True
+
+    return False
+
+
+def render_compact_api_key_table() -> None:
+    """
+    Render a compact table of API providers with status and actions.
+
+    This creates a table-like UI with columns:
+    - ID: Provider name
+    - Type: Provider type (LLM/embeddings)
+    - API Key: Shows masked key if configured or "Not configured"
+    - Actions: Buttons to add/remove keys
+    """
+    providers = get_available_providers()
+    if not providers:
+        show_info("No API providers are configured in the system.")
+        return
+
+    st.markdown("### API Providers")
+    col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
+    with col1:
+        st.markdown("**ID**")
+    with col2:
+        st.markdown("**Type**")
+    with col3:
+        st.markdown("**API Key**")
+    with col4:
+        st.markdown("**Actions**")
+
+    st.divider()
+
+    for provider in providers:
+        rerun_needed = _handle_api_key_actions(provider)
+        if rerun_needed:
+            st.rerun()
+        st.divider()
+
+
+def render_model_selection_table() -> None:
+    """
+    Render a compact table of model settings for the active provider.
+    """
+    active_provider = initialize_model_settings()
+
+    models = PROVIDER_MODELS.get(active_provider, [])
+    if not models:
+        show_warning(f"No models configured for {active_provider.capitalize()}.")
+        return
+
+    st.markdown(f"### {active_provider.capitalize()} Models")
+
+    st.radio(
+        "Provider:",
+        options=[p for p in get_available_providers() if get_api_key(p)],
+        format_func=lambda x: x.capitalize(),
+        index=0,
+        key="provider_table_selector",
+        horizontal=True,
+        on_change=lambda: st.session_state.update(
+            {"active_provider": st.session_state.provider_table_selector}
+        ),
+    )
+
+    current_settings = st.session_state.provider_settings.get(active_provider, {})
+    current_model = current_settings.get("model", models[0])
+
+    selected_model = st.selectbox(
+        "Model:",
+        options=models,
+        index=models.index(current_model) if current_model in models else 0,
+        key=f"{active_provider}_model_table_selector",
+    )
+
+    temperature = st.slider(
+        "Temperature:",
+        min_value=0.0,
+        max_value=2.0,
+        value=current_settings.get("temperature", 0.7),
+        step=0.1,
+        help="Controls randomness in responses: 0=deterministic, higher=more creative",
+    )
+
+    if active_provider in st.session_state.provider_settings:
+        st.session_state.provider_settings[active_provider].update(
+            {"model": selected_model, "temperature": temperature}
+        )
+
+    update_global_settings(active_provider, selected_model, temperature)
+
+
 def render_unified_settings_page(on_save_callback: Callable | None = None) -> None:
     """
     Render a settings page with unified model selection.
@@ -266,22 +419,23 @@ def render_unified_settings_page(on_save_callback: Callable | None = None) -> No
     render_page_header("Settings", "Configure API keys and model settings for PaperChat")
 
     with st.expander("API Keys", expanded=True):
-        providers = get_available_providers()
-        any_key_configured = any(get_api_key(provider) for provider in providers)
+        render_compact_api_key_table()
 
-        if not any_key_configured:
-            show_warning(
-                "No API keys configured. Please add at least one API key to use PaperChat."
-            )
+    with st.expander("Model Selection", expanded=True):
+        render_model_selection_table()
 
-        for provider in providers:
-            with st.container():
-                st.markdown(f"#### {provider.capitalize()}")
-                render_api_key_manager(provider, on_save_callback, show_header=False)
-                st.divider()
+    with st.expander("Retrieval Settings", expanded=True):
+        st.subheader("Document Retrieval")
+        top_k = st.slider(
+            "Number of chunks to retrieve",
+            min_value=1,
+            max_value=10,
+            value=st.session_state.settings.get("top_k", 5),
+            help="Higher values retrieve more document chunks but may include less relevant information",
+        )
 
-    with st.expander("Model Settings", expanded=True):
-        render_unified_model_settings()
+        if "settings" in st.session_state:
+            st.session_state.settings.update({"top_k": top_k})
 
 
 def render_settings_page(on_save_callback: Callable | None = None) -> None:

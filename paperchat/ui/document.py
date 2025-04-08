@@ -9,12 +9,81 @@ import tempfile
 import streamlit as st
 
 from paperchat.ingestion import process_document
-from paperchat.ui.common import show_info
+from paperchat.ui.common import show_info, show_warning
 from paperchat.ui.settings import (
     initialize_model_settings,
-    render_model_selector,
-    render_provider_selector,
+    update_global_settings,
 )
+
+
+def render_compact_settings_ui() -> None:
+    """Render a compact settings UI for the sidebar."""
+    initialize_model_settings()
+
+    selected_provider = st.session_state.active_provider
+
+    providers = list(st.session_state.provider_settings)
+    if providers:
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("**Provider:**")
+        with col2:
+            provider_index = (
+                providers.index(selected_provider) if selected_provider in providers else 0
+            )
+            selected_provider = st.radio(
+                "",
+                options=providers,
+                format_func=lambda x: x.capitalize(),
+                index=provider_index,
+                key="sidebar_provider_selector",
+                horizontal=True,
+                label_visibility="collapsed",
+            )
+    else:
+        show_warning("No providers configured. Please add API keys in settings.")
+        return
+
+    current_settings = st.session_state.provider_settings.get(selected_provider, {})
+
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.markdown("**Model:**")
+    with col2:
+        all_models = (
+            ["gpt-4o", "gpt-4o-mini"]
+            if selected_provider == "openai"
+            else ["claude-3.7-sonnet", "claude-3.5-sonnet"]
+        )
+        selected_model = st.selectbox(
+            "",
+            options=all_models,
+            index=all_models.index(current_settings.get("model", all_models[0]))
+            if current_settings.get("model") in all_models
+            else 0,
+            label_visibility="collapsed",
+        )
+
+    if selected_provider in st.session_state.provider_settings:
+        st.session_state.provider_settings[selected_provider]["model"] = selected_model
+
+    st.markdown("---")
+    st.markdown("**Retrieval settings:**")
+    top_k = st.slider(
+        "Chunks to retrieve",
+        min_value=1,
+        max_value=10,
+        value=st.session_state.settings.get("top_k", 5),
+        help="Higher values retrieve more chunks but may include less relevant information",
+    )
+
+    temperature = st.session_state.provider_settings.get(selected_provider, {}).get(
+        "temperature", 0.7
+    )
+    update_global_settings(selected_provider, selected_model, temperature)
+
+    if "settings" in st.session_state:
+        st.session_state.settings.update({"top_k": top_k})
 
 
 def render_upload_section() -> None:
@@ -30,14 +99,12 @@ def render_upload_section() -> None:
         file_content = uploaded_file.getvalue()
         content_hash = hashlib.md5(file_content).hexdigest()
 
-        # check if document is already processed
         if content_hash in st.session_state.processed_documents:
             st.success(f"Document already processed: {original_filename}")
-            # if it's not the active one, make it active and clear chat
             if st.session_state.active_document_hash != content_hash:
                 st.session_state.active_document_hash = content_hash
                 st.session_state.messages = []
-                st.rerun()  # rerun to reflect the change in active doc and clear chat
+                st.rerun()
         else:
             progress_bar = st.progress(0)
             st.markdown("⏳ Processing document... This may take a moment.")
@@ -114,36 +181,6 @@ def render_document_list() -> None:
             st.markdown(f"*...and {num_chunks - 5} more chunks*")
 
 
-def render_quick_settings() -> None:
-    """Render simplified model and retrieval settings for the sidebar."""
-    initialize_model_settings()
-    selected_provider = render_provider_selector()
-    selected_model = render_model_selector(selected_provider)
-
-    st.subheader("🔍 Retrieval")
-    top_k = st.slider(
-        "Chunks to retrieve",
-        min_value=1,
-        max_value=10,
-        value=st.session_state.settings.get("top_k", 5),
-        help="Higher values retrieve more chunks but may include less relevant information",
-    )
-
-    temperature = st.session_state.provider_settings.get(selected_provider, {}).get(
-        "temperature", 0.7
-    )
-
-    if "settings" in st.session_state:
-        st.session_state.settings.update(
-            {
-                "top_k": top_k,
-                "provider": selected_provider,
-                "model": selected_model,
-                "temperature": temperature,
-            }
-        )
-
-
 def render_sidebar() -> None:
     """Render the app sidebar."""
     st.header("📄 Document")
@@ -167,7 +204,7 @@ def render_sidebar() -> None:
         st.rerun()
 
     with st.expander("Model & Retrieval", expanded=False):
-        render_quick_settings()
+        render_compact_settings_ui()
 
     st.divider()
 
