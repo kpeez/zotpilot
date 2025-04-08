@@ -13,7 +13,7 @@ from paperchat.utils.formatting import (
 )
 
 
-def render_api_key_setup():
+def render_api_key_setup() -> None:
     """Render the API key setup screen when no keys are configured."""
     from paperchat.ui.api_settings import render_api_key_manager
 
@@ -56,7 +56,7 @@ def render_api_key_setup():
         st.rerun()
 
 
-def render_chat_interface():
+def render_chat_interface() -> None:
     """Render the chat interface."""
     chat_container = st.container()
 
@@ -139,7 +139,7 @@ def render_chat_interface():
                     st.error(error_message)
 
 
-def render_main_content():
+def render_main_content() -> None:
     """Render the main content area with chat or welcome screen."""
     if not st.session_state.processed_documents:
         st.markdown("""
