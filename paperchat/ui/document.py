@@ -10,10 +10,14 @@ import streamlit as st
 
 from paperchat.ingestion import process_document
 from paperchat.ui.common import show_info
-from paperchat.ui.settings import PROVIDER_MODELS
+from paperchat.ui.settings import (
+    initialize_model_settings,
+    render_model_selector,
+    render_provider_selector,
+)
 
 
-def render_upload_section():
+def render_upload_section() -> None:
     """Render document upload section in the sidebar."""
     st.markdown("Upload a PDF to start chatting with its content.")
 
@@ -69,7 +73,7 @@ def render_upload_section():
                     os.unlink(pdf_path)
 
 
-def render_document_list():
+def render_document_list() -> None:
     """Render the list of processed documents."""
     if not st.session_state.processed_documents:
         show_info("No document loaded. Please upload a PDF file to start.")
@@ -110,7 +114,37 @@ def render_document_list():
             st.markdown(f"*...and {num_chunks - 5} more chunks*")
 
 
-def render_sidebar():
+def render_quick_settings() -> None:
+    """Render simplified model and retrieval settings for the sidebar."""
+    initialize_model_settings()
+    selected_provider = render_provider_selector()
+    selected_model = render_model_selector(selected_provider)
+
+    st.subheader("🔍 Retrieval")
+    top_k = st.slider(
+        "Chunks to retrieve",
+        min_value=1,
+        max_value=10,
+        value=st.session_state.settings.get("top_k", 5),
+        help="Higher values retrieve more chunks but may include less relevant information",
+    )
+
+    temperature = st.session_state.provider_settings.get(selected_provider, {}).get(
+        "temperature", 0.7
+    )
+
+    if "settings" in st.session_state:
+        st.session_state.settings.update(
+            {
+                "top_k": top_k,
+                "provider": selected_provider,
+                "model": selected_model,
+                "temperature": temperature,
+            }
+        )
+
+
+def render_sidebar() -> None:
     """Render the app sidebar."""
     st.header("📄 Document")
 
@@ -128,45 +162,12 @@ def render_sidebar():
 
     st.header("⚙️ Settings")
 
-    # Add Settings button
     if st.button("Open Settings", key="open_settings"):
         st.session_state.show_settings = True
         st.rerun()
 
-    with st.expander("Adjust model and retrieval settings", expanded=False):
-        model = st.selectbox(
-            "Model",
-            options=PROVIDER_MODELS.get("openai", ["gpt-4o"]),
-            index=0,
-            help="Select the language model to use",
-        )
-
-        st.subheader("Retrieval Settings")
-        top_k = st.slider(
-            "Number of chunks to retrieve",
-            min_value=1,
-            max_value=10,
-            value=st.session_state.settings["top_k"],
-            help="Higher values retrieve more document chunks but may include less relevant information",
-        )
-
-        st.subheader("LLM Settings")
-        temperature = st.slider(
-            "Temperature",
-            min_value=0.0,
-            max_value=2.0,
-            value=st.session_state.settings["temperature"],
-            step=0.1,
-            help="Higher values make output more creative, lower values more deterministic",
-        )
-
-        st.session_state.settings.update(
-            {
-                "top_k": top_k,
-                "temperature": temperature,
-                "model": model,
-            }
-        )
+    with st.expander("Model & Retrieval", expanded=False):
+        render_quick_settings()
 
     st.divider()
 
