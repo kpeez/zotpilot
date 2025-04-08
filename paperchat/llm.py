@@ -6,7 +6,7 @@ from openai import OpenAI
 from .embeddings import EmbeddingModel
 from .ingestion import process_document
 from .retrieval import similarity_search
-from .utils.config import get_openai_api_key, setup_openai_api_key
+from .utils.config import get_api_key
 from .utils.formatting import format_context, format_response_with_citations
 from .utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_TEMPERATURE
 
@@ -22,9 +22,10 @@ def get_openai_client(api_key: str | None = None) -> OpenAI:
         OpenAI client instance
     """
     if not api_key:
-        api_key = get_openai_api_key()
+        api_key = get_api_key("openai")
         if not api_key:
-            api_key = setup_openai_api_key()
+            # prompt user for API key
+            return None
 
     return OpenAI(api_key=api_key)
 
