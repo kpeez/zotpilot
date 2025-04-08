@@ -71,14 +71,12 @@ def main() -> None:
     """Main entry point for the Streamlit app."""
     initialize_session()
 
-    # check for API keys
     openai_key = get_api_key("openai")
     if not openai_key or st.session_state.show_api_setup:
         render_api_key_setup()
         st.stop()
 
     st.title("🤖 PaperChat - Chat with your research library")
-    # show settings page if requested
     if st.session_state.show_settings:
         render_settings_page(on_save_callback=lambda: st.rerun())
         if st.button("⬅️ Back to Chat"):
@@ -86,7 +84,6 @@ def main() -> None:
             st.rerun()
         st.stop()
 
-    # standard app UI (sidebar + main content)
     with st.sidebar:
         render_sidebar()
 

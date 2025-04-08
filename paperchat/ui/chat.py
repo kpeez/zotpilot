@@ -48,7 +48,6 @@ def render_api_key_setup() -> None:
         4. Copy the key and paste it above
         """)
 
-    # allow user to continue if at least one key is configured
     if (openai_configured or anthropic_configured) and st.button(
         "Continue to PaperChat", use_container_width=True
     ):
