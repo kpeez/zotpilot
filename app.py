@@ -25,7 +25,7 @@ st.set_page_config(
 set_css_styles()
 
 
-def initialize_session():
+def initialize_session() -> None:
     """Initialize all session state variables and models in one place."""
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -67,7 +67,7 @@ def initialize_session():
         st.session_state.show_settings = False
 
 
-def main():
+def main() -> None:
     """Main entry point for the Streamlit app."""
     initialize_session()
 
