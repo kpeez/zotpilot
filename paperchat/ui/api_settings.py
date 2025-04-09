@@ -7,7 +7,7 @@ from typing import Callable
 import streamlit as st
 
 from paperchat.ui.common import show_error, show_info, show_success
-from paperchat.utils.config import (
+from paperchat.utils.api_keys import (
     get_api_key,
     get_available_providers,
     get_provider_display_name,

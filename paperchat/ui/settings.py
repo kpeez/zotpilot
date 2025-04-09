@@ -14,7 +14,7 @@ from paperchat.ui.common import (
     show_success,
     show_warning,
 )
-from paperchat.utils.config import get_api_key, get_available_providers
+from paperchat.utils.api_keys import get_api_key, get_available_providers
 
 from ..llms.common import list_available_providers, list_models
 from ..utils.settings import (
@@ -291,7 +291,7 @@ def _handle_api_key_actions(provider: str) -> bool:
 
     with col3:
         if is_configured:
-            from paperchat.utils.config import mask_api_key
+            from paperchat.utils.api_keys import mask_api_key
 
             masked_key = mask_api_key(get_api_key(provider))
             st.code(masked_key, language=None)
@@ -304,7 +304,7 @@ def _handle_api_key_actions(provider: str) -> bool:
                 st.session_state[f"show_{provider}_form"] = True
 
             if st.button("Remove", key=f"remove_{provider}_btn"):
-                from paperchat.utils.config import remove_api_key
+                from paperchat.utils.api_keys import remove_api_key
 
                 success, message = remove_api_key(provider)
                 if success:

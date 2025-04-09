@@ -6,7 +6,7 @@ from typing import Any, Generator
 
 from anthropic import Anthropic
 
-from ..utils.config import get_api_key
+from ..utils.api_keys import get_api_key
 from ..utils.settings import DEFAULT_SYSTEM_PROMPT
 
 
