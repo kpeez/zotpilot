@@ -3,7 +3,7 @@ import os
 import streamlit as st
 
 from paperchat.embeddings import EmbeddingModel
-from paperchat.llm import get_openai_client
+from paperchat.llms.common import get_client
 from paperchat.ui import (
     render_api_key_setup,
     render_main_content,
@@ -11,7 +11,8 @@ from paperchat.ui import (
     render_sidebar,
     set_css_styles,
 )
-from paperchat.utils.config import get_api_key
+from paperchat.utils.api_keys import get_api_key
+from paperchat.utils.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -50,15 +51,17 @@ def initialize_session() -> None:
         st.session_state.settings = {
             "top_k": 5,
             "temperature": 0.7,
-            "max_tokens": 1000,
-            "model": "gpt-4o",
+            "max_tokens": DEFAULT_MAX_TOKENS,
+            "model": DEFAULT_MODEL,
+            "provider": DEFAULT_PROVIDER,
         }
 
     if "embedding_model" not in st.session_state:
         st.session_state.embedding_model = EmbeddingModel()
 
     if "llm_client" not in st.session_state:
-        st.session_state.llm_client = get_openai_client()
+        provider = st.session_state.settings.get("provider", DEFAULT_PROVIDER)
+        st.session_state.llm_client = get_client(provider_name=provider)
 
     # UI state management
     if "show_api_setup" not in st.session_state:
@@ -71,8 +74,11 @@ def main() -> None:
     """Main entry point for the Streamlit app."""
     initialize_session()
 
-    openai_key = get_api_key("openai")
-    if not openai_key or st.session_state.show_api_setup:
+    # Check if the api key for the selected provider exists
+    provider = st.session_state.settings.get("provider", DEFAULT_PROVIDER)
+    provider_key = get_api_key(provider)
+
+    if not provider_key or st.session_state.show_api_setup:
         render_api_key_setup()
         st.stop()
 
