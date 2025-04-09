@@ -1,140 +1,12 @@
 from pathlib import Path
 from typing import Any, Generator
 
-from openai import OpenAI
-
 from .embeddings import EmbeddingModel
 from .ingestion import process_document
+from .llms.common import generate_response, generate_streaming_response, get_client
 from .retrieval import similarity_search
-from .utils.config import get_api_key
 from .utils.formatting import format_context, format_response_with_citations
-from .utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_TEMPERATURE
-
-
-def get_openai_client(api_key: str | None = None) -> OpenAI:
-    """
-    Get an OpenAI client with appropriate API key.
-
-    Args:
-        api_key: Optional API key. If not provided, will use configured key or prompt for one.
-
-    Returns:
-        OpenAI client instance
-    """
-    if not api_key:
-        api_key = get_api_key("openai")
-        if not api_key:
-            # prompt user for API key
-            return None
-
-    return OpenAI(api_key=api_key)
-
-
-def build_prompt(query: str, context: str) -> list[dict[str, str]]:
-    """
-    Build a prompt for the LLM from the query and context.
-
-    Args:
-        query: User's question
-        context: Context from retrieved document chunks
-
-    Returns:
-        list of message dictionaries for OpenAI API
-    """
-    system_message = (
-        "You are a helpful academic research assistant helping with a scientific paper. "
-        "Act as an expert in the field of the paper. "
-        "Answer questions based on your knowledge of the paper and the context provided. "
-        "When citing information, refer to the specific section of the paper where it appears. "
-        "Be precise, scholarly, and focus on the factual content of the paper."
-    )
-
-    messages = [
-        {"role": "system", "content": system_message},
-        {
-            "role": "user",
-            "content": f"Here is the relevant context from the paper:\n\n{context}\n\nQuestion: {query}",
-        },
-    ]
-
-    return messages
-
-
-def generate_response(
-    query: str,
-    context: str,
-    model: str = DEFAULT_MODEL,
-    temperature: float = DEFAULT_TEMPERATURE,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
-    client: OpenAI | None = None,
-) -> str:
-    """
-    Generate a response from the LLM for a query with given context.
-
-    Args:
-        query: User's question
-        context: Context from retrieved document chunks
-        model: OpenAI model to use
-        temperature: Temperature parameter (0-1)
-        max_tokens: Maximum tokens in response
-        client: Optional OpenAI client instance
-
-    Returns:
-        Generated response from the LLM
-    """
-    if client is None:
-        client = get_openai_client()
-
-    messages = build_prompt(query, context)
-    try:
-        completion = client.chat.completions.create(
-            model=model, messages=messages, temperature=temperature, max_tokens=max_tokens
-        )
-        return completion.choices[0].message.content
-    except Exception as e:
-        return f"Error generating response: {e!s}"
-
-
-def generate_streaming_response(
-    query: str,
-    context: str,
-    model: str = DEFAULT_MODEL,
-    temperature: float = DEFAULT_TEMPERATURE,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
-    client: OpenAI | None = None,
-) -> Generator[str, None, None]:
-    """
-    Generate a streaming response from the LLM.
-
-    Args:
-        query: User's question
-        context: Context from retrieved document chunks
-        model: OpenAI model to use
-        temperature: Temperature parameter (0-1)
-        max_tokens: Maximum tokens in response
-        client: Optional OpenAI client instance
-
-    Yields:
-        Chunks of the generated response
-    """
-    if client is None:
-        client = get_openai_client()
-
-    messages = build_prompt(query, context)
-    try:
-        stream = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-        )
-
-        for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
-    except Exception as e:
-        yield f"Error generating response: {e!s}"
+from .utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_TEMPERATURE
 
 
 def process_query(
@@ -144,7 +16,8 @@ def process_query(
     temperature: float = DEFAULT_TEMPERATURE,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     stream: bool = False,
-    client: OpenAI | None = None,
+    client: Any | None = None,
+    provider_name: str = DEFAULT_PROVIDER,
 ) -> str | Generator[str, None, None]:
     """
     Process a query using the RAG pipeline.
@@ -152,11 +25,12 @@ def process_query(
     Args:
         query: User's question
         retrieved_results: Results from the retrieval system
-        model: OpenAI model to use
+        model: Model to use
         temperature: Temperature parameter (0-1)
         max_tokens: Maximum tokens in response
         stream: Whether to stream the response
-        client: Optional OpenAI client instance
+        client: Optional client instance
+        provider_name: Name of the provider to use
 
     Returns:
         Generated response or streaming generator
@@ -170,6 +44,7 @@ def process_query(
             temperature=temperature,
             max_tokens=max_tokens,
             client=client,
+            provider_name=provider_name,
         )
     else:
         return generate_response(
@@ -179,6 +54,7 @@ def process_query(
             temperature=temperature,
             max_tokens=max_tokens,
             client=client,
+            provider_name=provider_name,
         )
 
 
@@ -192,9 +68,10 @@ def rag_pipeline(
     max_tokens: int = DEFAULT_MAX_TOKENS,
     stream: bool = False,
     embedding_model: Any = None,
-    client: OpenAI | None = None,
+    client: Any | None = None,
     embedding_model_id: str | None = None,
     api_key: str | None = None,
+    provider_name: str = DEFAULT_PROVIDER,
 ) -> tuple[str | Generator[str, None, None], list[dict[str, Any]]]:
     """
     Complete RAG pipeline that handles document processing, retrieval, and generation.
@@ -206,20 +83,21 @@ def rag_pipeline(
         document_data: Optional pre-processed document data from process_document
         pdf_path: Path to PDF file (used if document_data is not provided)
         top_k: Number of chunks to retrieve
-        model: OpenAI model to use for generation
+        model: Model to use for generation
         temperature: Temperature parameter (0-1)
         max_tokens: Maximum tokens in response
         stream: Whether to stream the response
         embedding_model: Optional pre-initialized embedding model (avoids recreation)
-        client: Optional pre-initialized OpenAI client (avoids recreation)
+        client: Optional pre-initialized client (avoids recreation)
         embedding_model_id: Model ID for embeddings (ignored if embedding_model provided)
-        api_key: Optional API key for OpenAI (ignored if client provided)
+        api_key: Optional API key
+        provider_name: Name of the provider to use
 
     Returns:
         Tuple of (generated response or streaming generator, retrieved results)
     """
     if client is None:
-        client = get_openai_client(api_key)
+        client = get_client(provider_name=provider_name, api_key=api_key)
 
     if embedding_model is None:
         embedding_model = EmbeddingModel(model_id=embedding_model_id)
@@ -246,6 +124,7 @@ def rag_pipeline(
         max_tokens=max_tokens,
         stream=stream,
         client=client,
+        provider_name=provider_name,
     )
 
     response = format_response_with_citations(response)
