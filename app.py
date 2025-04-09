@@ -12,7 +12,7 @@ from paperchat.ui import (
     set_css_styles,
 )
 from paperchat.utils.config import get_api_key
-from paperchat.utils.settings import DEFAULT_MODEL, DEFAULT_PROVIDER
+from paperchat.utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -51,7 +51,7 @@ def initialize_session() -> None:
         st.session_state.settings = {
             "top_k": 5,
             "temperature": 0.7,
-            "max_tokens": 1000,
+            "max_tokens": DEFAULT_MAX_TOKENS,
             "model": DEFAULT_MODEL,
             "provider": DEFAULT_PROVIDER,
         }
