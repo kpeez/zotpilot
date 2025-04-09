@@ -16,6 +16,14 @@ from paperchat.ui.common import (
 )
 from paperchat.utils.config import get_api_key, get_available_providers
 
+from ..llms.common import list_available_providers, list_models
+from ..utils.settings import (
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_MODEL,
+    DEFAULT_PROVIDER,
+    DEFAULT_TEMPERATURE,
+)
+
 PROVIDER_MODELS = {
     "openai": ["gpt-4o", "gpt-4o-mini"],
     "anthropic": ["claude-3.7-sonnet", "claude-3.5-sonnet", "claude-3.5-haiku"],
@@ -440,12 +448,86 @@ def render_unified_settings_page(on_save_callback: Callable | None = None) -> No
 
 def render_settings_page(on_save_callback: Callable | None = None) -> None:
     """
-    Render a complete settings page.
+    Render the settings configuration page.
 
     Args:
-        on_save_callback: Function to call after saving settings
+        on_save_callback: Optional callback to execute after settings are saved
     """
-    render_unified_settings_page(on_save_callback)
+    st.header("⚙️ Settings")
+    st.write("Configure your chat experience")
+
+    settings = st.session_state.settings
+
+    with st.form("settings_form"):
+        st.subheader("Model Settings")
+        providers = list_available_providers()
+        provider = st.selectbox(
+            "LLM Provider",
+            options=providers,
+            index=providers.index(settings.get("provider", DEFAULT_PROVIDER))
+            if settings.get("provider") in providers
+            else 0,
+            help="Select which LLM provider to use",
+        )
+        provider_models = list_models(provider_name=provider)
+        model_ids = [model["id"] for model in provider_models]
+        current_model = settings.get("model", DEFAULT_MODEL)
+        model_index = 0
+        if current_model in model_ids:
+            model_index = model_ids.index(current_model)
+
+        model = st.selectbox(
+            "Model", options=model_ids, index=model_index, help="Select which language model to use"
+        )
+
+        temperature = st.slider(
+            "Temperature",
+            min_value=0.0,
+            max_value=2.0,
+            value=settings.get("temperature", DEFAULT_TEMPERATURE),
+            step=0.05,
+            format="%.2f",
+            help="Controls randomness in the model. Lower values are more deterministic, higher values more creative.",
+        )
+
+        max_tokens = st.number_input(
+            "Max response tokens",
+            min_value=100,
+            max_value=4000,
+            value=settings.get("max_tokens", DEFAULT_MAX_TOKENS),
+            step=50,
+            help="Maximum number of tokens (words/word pieces) in the model's response.",
+        )
+
+        st.subheader("Retrieval Settings")
+        top_k = st.slider(
+            "Number of context chunks",
+            min_value=1,
+            max_value=20,
+            value=settings.get("top_k", 5),
+            step=1,
+            help="How many chunks from the document to include in the model's context.",
+        )
+
+        save_button = st.form_submit_button("Save Settings")
+
+        if save_button:
+            settings["provider"] = provider
+            settings["model"] = model
+            settings["temperature"] = temperature
+            settings["max_tokens"] = max_tokens
+            settings["top_k"] = top_k
+            # update the LLM client with the new provider if it changed
+            if provider != st.session_state.get("last_provider", DEFAULT_PROVIDER):
+                from ..llms.common import get_client
+
+                st.session_state.llm_client = get_client(provider_name=provider)
+                st.session_state["last_provider"] = provider
+
+            st.success("Settings saved!")
+
+            if on_save_callback:
+                on_save_callback()
 
 
 def render_settings_modal(on_close_callback: Callable | None = None) -> None:
