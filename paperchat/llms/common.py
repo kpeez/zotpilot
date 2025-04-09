@@ -2,10 +2,11 @@
 Common protocols and interfaces for LLM providers.
 """
 
-from typing import Any, Generator, Protocol, runtime_checkable
+from typing import Any, Generator, Protocol, Type, runtime_checkable
 
 from ..utils.config import DEFAULT_PROVIDER
-from . import anthropic, openai
+from .anthropic import AnthropicAdapter
+from .openai import OpenAIAdapter
 
 
 @runtime_checkable
@@ -53,21 +54,21 @@ class LLMProvider(Protocol):
 
 
 # registry of available LLM providers
-PROVIDERS: dict[str, LLMProvider] = {
-    "openai": openai,
-    "anthropic": anthropic,
+PROVIDERS: dict[str, Type[LLMProvider]] = {
+    "openai": OpenAIAdapter,
+    "anthropic": AnthropicAdapter,
 }
 
 
-def get_provider(provider_name: str = DEFAULT_PROVIDER) -> LLMProvider:
+def get_provider(provider_name: str = DEFAULT_PROVIDER) -> Type[LLMProvider]:
     """
-    Get the provider module for the specified provider name.
+    Get the provider class for the specified provider name.
 
     Args:
         provider_name: Name of the provider to use
 
     Returns:
-        Provider module
+        Provider class
 
     Raises:
         ValueError: If the provider is not supported
@@ -164,15 +165,15 @@ def generate_streaming_response(
     )
 
 
-def register_provider(name: str, provider: LLMProvider) -> None:
+def register_provider(name: str, provider_class: Type[LLMProvider]) -> None:
     """
     Register a new LLM provider.
 
     Args:
         name: Name to register the provider under
-        provider: Provider module implementing the LLMProvider protocol
+        provider_class: Provider class implementing the LLMProvider protocol
     """
-    PROVIDERS[name] = provider
+    PROVIDERS[name] = provider_class
 
 
 def list_available_providers() -> list[str]:
