@@ -15,6 +15,9 @@ from paperchat.utils.config import (
     remove_api_key,
     set_api_key,
 )
+from paperchat.utils.settings import DEFAULT_PROVIDER
+
+from ..llms.common import list_available_providers
 
 
 def render_api_key_form(
@@ -89,22 +92,18 @@ def render_api_key_manager(
     if show_header:
         st.subheader(f"{provider_name} API Key")
 
-    # Check if key exists
     api_key = get_api_key(provider)
 
     if api_key:
-        # Show masked key
         masked_key = mask_api_key(api_key)
         st.success(f"✅ {provider_name} API key is configured")
 
-        # Option to update
         st.markdown(f"Current key: `{masked_key}`")
         if st.checkbox(f"Change {provider_name} API key", key=f"change_{provider}_key{key_suffix}"):
             return render_api_key_form(
                 provider, on_save_callback, key_suffix=f"_change{key_suffix}"
             )
 
-        # Option to remove
         if st.button(
             f"Remove {provider_name} API key",
             key=f"remove_{provider}_key{key_suffix}",
@@ -121,7 +120,6 @@ def render_api_key_manager(
 
         return True
     else:
-        # No key configured, show input form
         show_info(f"No {provider_name} API key configured")
         return render_api_key_form(provider, on_save_callback, key_suffix)
 
@@ -144,3 +142,85 @@ def render_api_keys_section(
         if i > 0:
             st.divider()
         render_api_key_manager(provider, on_save_callback)
+
+
+def render_api_key_setup():
+    """Render the API key configuration interface."""
+    st.header("🔑 API Keys Configuration")
+
+    providers = list_available_providers()
+    default_provider_index = 0
+    if DEFAULT_PROVIDER in providers:
+        default_provider_index = providers.index(DEFAULT_PROVIDER)
+
+    selected_provider = st.selectbox(
+        "Configure API Key for:",
+        options=providers,
+        index=default_provider_index,
+    )
+
+    current_api_key = get_api_key(selected_provider) or ""
+
+    provider_info = {
+        "openai": {
+            "name": "OpenAI",
+            "help": "Your OpenAI API key. Get your key at https://platform.openai.com/api-keys",
+            "placeholder": "sk-...",
+        },
+        "anthropic": {
+            "name": "Anthropic",
+            "help": "Your Anthropic API key. Get your key at https://console.anthropic.com/",
+            "placeholder": "sk-ant-...",
+        },
+    }
+
+    info = provider_info.get(
+        selected_provider,
+        {
+            "name": selected_provider.capitalize(),
+            "help": f"Your {selected_provider.capitalize()} API key",
+            "placeholder": "Enter your API key here...",
+        },
+    )
+
+    st.write(f"Configure your {info['name']} API key to continue.")
+
+    with st.form(key="api_key_form"):
+        api_key = st.text_input(
+            f"{info['name']} API Key",
+            value=current_api_key,
+            type="password",
+            help=info["help"],
+            placeholder=info["placeholder"],
+        )
+
+        submitted = st.form_submit_button("Save API Key")
+
+        if submitted:
+            if api_key:
+                set_api_key(selected_provider, api_key)
+                st.success(f"{info['name']} API key saved successfully!")
+                st.session_state.show_api_setup = False
+                st.rerun()
+            else:
+                st.error("Please enter a valid API key")
+
+    st.subheader("API Key Status")
+
+    for provider in providers:
+        has_key = bool(get_api_key(provider))
+        provider_display = provider_info.get(provider, {}).get("name", provider.capitalize())
+
+        col1, col2, col3 = st.columns([3, 1, 1])
+        with col1:
+            st.write(f"{provider_display}")
+        with col2:
+            st.write("✅ Configured" if has_key else "❌ Not configured")
+        with col3:
+            if provider != selected_provider and st.button("Configure", key=f"config_{provider}"):
+                st.session_state.show_api_setup = True
+                st.experimental_rerun()
+
+    if st.button("Continue to App"):
+        st.session_state.show_api_setup = False
+        st.rerun()
