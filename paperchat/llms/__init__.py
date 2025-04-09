@@ -4,6 +4,7 @@ LLM provider interface for multiple AI model providers.
 
 from .anthropic import AnthropicAdapter
 from .common import (
+    PROVIDERS,
     LLMProvider,
     generate_response,
     generate_streaming_response,
@@ -16,6 +17,7 @@ from .common import (
 from .openai import OpenAIAdapter
 
 __all__ = [
+    "PROVIDERS",
     "AnthropicAdapter",
     "LLMProvider",
     "OpenAIAdapter",
