@@ -15,7 +15,7 @@ from paperchat.utils.api_keys import (
     remove_api_key,
     set_api_key,
 )
-from paperchat.utils.settings import DEFAULT_PROVIDER
+from paperchat.utils.config import DEFAULT_PROVIDER
 
 from ..llms.common import list_available_providers
 

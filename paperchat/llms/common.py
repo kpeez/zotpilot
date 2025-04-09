@@ -4,7 +4,7 @@ Common protocols and interfaces for LLM providers.
 
 from typing import Any, Generator, Protocol, runtime_checkable
 
-from ..utils.settings import DEFAULT_PROVIDER
+from ..utils.config import DEFAULT_PROVIDER
 from . import anthropic, openai
 
 

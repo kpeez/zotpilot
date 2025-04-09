@@ -12,7 +12,7 @@ from paperchat.ui import (
     set_css_styles,
 )
 from paperchat.utils.api_keys import get_api_key
-from paperchat.utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER
+from paperchat.utils.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 

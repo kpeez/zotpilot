@@ -5,8 +5,8 @@ from .embeddings import EmbeddingModel
 from .ingestion import process_document
 from .llms.common import generate_response, generate_streaming_response, get_client
 from .retrieval import similarity_search
+from .utils.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_TEMPERATURE
 from .utils.formatting import format_context, format_response_with_citations
-from .utils.settings import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_TEMPERATURE
 
 
 def process_query(

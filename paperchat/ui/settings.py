@@ -17,7 +17,7 @@ from paperchat.ui.common import (
 from paperchat.utils.api_keys import get_api_key, get_available_providers
 
 from ..llms.common import list_available_providers, list_models
-from ..utils.settings import (
+from ..utils.config import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL,
     DEFAULT_PROVIDER,
