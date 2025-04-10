@@ -126,7 +126,13 @@ def render_model_table() -> None:
         show_info("No models available. Please configure API keys first.")
         return
 
-    col1, col2, col3 = st.columns([1, 2, 1])
+    active_provider = st.session_state.get("active_provider", "")
+    active_model = ""
+    if active_provider in st.session_state.get("provider_settings", {}):
+        active_model = st.session_state.provider_settings[active_provider].get("model", "")
+
+    # Create a simple table with 3 columns
+    col1, col2, col3 = st.columns([2, 3, 2])
     with col1:
         st.markdown("**Provider**")
     with col2:
@@ -136,13 +142,8 @@ def render_model_table() -> None:
 
     st.divider()
 
-    active_provider = st.session_state.get("active_provider", "")
-    active_model = ""
-    if active_provider in st.session_state.get("provider_settings", {}):
-        active_model = st.session_state.provider_settings[active_provider].get("model", "")
-
     for model_info in all_models:
-        col1, col2, col3 = st.columns([1, 2, 1])
+        col1, col2, col3 = st.columns([2, 3, 2])
 
         with col1:
             st.markdown(f"{model_info['provider_display']}")
@@ -154,7 +155,6 @@ def render_model_table() -> None:
             is_selected = (
                 model_info["provider"] == active_provider and model_info["model_id"] == active_model
             )
-
             if is_selected:
                 st.markdown("✅ **Active**")
             elif st.button(
@@ -628,12 +628,12 @@ def render_settings_page(on_save_callback: Callable | None = None) -> None:
         st.session_state.show_settings = False
         st.rerun()
 
-    st.subheader("Providers")
+    st.subheader("API Keys")
     st.caption("Configure API keys for each provider.")
     render_api_key_table()
 
     st.subheader("Models")
-    st.caption("Select the models to use.")
+    st.caption("Select which model to use for generating responses.")
     render_model_table()
 
     st.subheader("Model & Retrieval Settings")
@@ -642,9 +642,10 @@ def render_settings_page(on_save_callback: Callable | None = None) -> None:
         active_settings = st.session_state.provider_settings.get(active_provider, {})
         active_model = active_settings.get("model", "")
 
-        st.markdown(
-            f"**Current Model:** {get_provider_display_name(active_provider)} - `{active_model}`"
-        )
+        # Get provider display name
+        provider_display = get_provider_display_name(active_provider)
+
+        st.markdown(f"**Current Model:** {provider_display} - `{active_model}`")
 
         temperature = st.slider(
             "Temperature",
