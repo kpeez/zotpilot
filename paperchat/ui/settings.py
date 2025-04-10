@@ -454,6 +454,12 @@ def render_settings_page(on_save_callback: Callable | None = None) -> None:
         on_save_callback: Optional callback to execute after settings are saved
     """
     st.header("⚙️ Settings")
+    if st.button("⬅️ Back to Chat", use_container_width=True):
+        st.session_state.show_settings = False
+        st.rerun()
+
+    st.divider()
+
     st.write("Configure your chat experience")
 
     settings = st.session_state.settings
