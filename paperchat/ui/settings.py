@@ -528,16 +528,3 @@ def render_settings_page(on_save_callback: Callable | None = None) -> None:
 
             if on_save_callback:
                 on_save_callback()
-
-
-def render_settings_modal(on_close_callback: Callable | None = None) -> None:
-    """
-    Render settings as a modal overlay.
-
-    This is a placeholder that would use Streamlit's experimental modal
-    functionality when needed.
-
-    Args:
-        on_close_callback: Function to call when modal is closed
-    """
-    render_settings_page(on_close_callback)

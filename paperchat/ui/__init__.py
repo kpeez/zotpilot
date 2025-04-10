@@ -26,7 +26,6 @@ from .document import (
 from .settings import (
     render_model_settings,
     render_provider_settings,
-    render_settings_modal,
     render_settings_page,
     render_settings_tabs,
 )
@@ -42,7 +41,6 @@ __all__ = [
     "render_model_settings",
     "render_page_header",
     "render_provider_settings",
-    "render_settings_modal",
     "render_settings_page",
     "render_settings_tabs",
     "render_sidebar",
