@@ -104,9 +104,8 @@ def handle_api_key_popup(provider: str) -> None:
 def render_model_table() -> None:
     """
     Render a table of all available models across providers.
-    Each row is a specific model.
     """
-    st.markdown("### Available Models")
+    st.markdown("#### Available Models")
 
     all_models = []
     for provider in get_available_providers():
@@ -192,11 +191,12 @@ def render_api_key_table() -> None:
     This approach allows embedding interactive buttons directly in the table.
     """
     providers = get_available_providers()
+
     if not providers:
         show_info("No API providers are configured.")
         return
 
-    col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
     with col1:
         st.markdown("**ID**")
     with col2:
@@ -209,7 +209,7 @@ def render_api_key_table() -> None:
     st.divider()
 
     for provider in providers:
-        col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
 
         with col1:
             st.markdown(f"{provider.lower()}")
@@ -628,10 +628,12 @@ def render_settings_page(on_save_callback: Callable | None = None) -> None:
         st.session_state.show_settings = False
         st.rerun()
 
-    st.subheader("API Keys")
+    st.subheader("Providers")
+    st.caption("Configure API keys for each provider.")
     render_api_key_table()
 
     st.subheader("Models")
+    st.caption("Select the models to use.")
     render_model_table()
 
     st.subheader("Model & Retrieval Settings")
