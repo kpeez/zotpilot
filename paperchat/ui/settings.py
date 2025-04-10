@@ -14,7 +14,14 @@ from paperchat.ui.common import (
     show_success,
     show_warning,
 )
-from paperchat.utils.api_keys import get_api_key, get_available_providers
+from paperchat.utils.api_keys import (
+    get_api_key,
+    get_available_providers,
+    get_provider_display_name,
+    mask_api_key,
+    remove_api_key,
+    set_api_key,
+)
 
 from ..llms.common import list_available_providers, list_models
 from ..utils.config import (
@@ -29,6 +36,134 @@ PROVIDER_MODELS = {
     "anthropic": ["claude-3.7-sonnet", "claude-3.5-sonnet", "claude-3.5-haiku"],
     # TODO: add gemini models
 }
+
+
+def add_api_table_css() -> None:
+    """
+    Add custom CSS for the API key table styling.
+    """
+    st.markdown(
+        """
+    <style>
+    /* Code block styling for masked keys */
+    pre {
+        padding: 0.5rem !important;
+        background-color: #f0f0f0 !important;
+        border-radius: 4px !important;
+        margin: 0 !important;
+    }
+    .stDivider {
+        margin-top: 0.5rem !important;
+        margin-bottom: 0.5rem !important;
+    }
+    </style>
+    """,
+        unsafe_allow_html=True,
+    )
+
+
+def handle_api_key_popup(provider: str) -> None:
+    """
+    Handle the API key popup interaction for a provider.
+
+    Args:
+        provider: Provider ID (e.g., 'openai')
+    """
+    provider_name = get_provider_display_name(provider)
+    current_key = get_api_key(provider) or ""
+
+    with st.form(key=f"{provider}_popup_form"):
+        api_key = st.text_input(
+            "API Key",
+            value=current_key,
+            type="password" if current_key else "default",
+            placeholder=f"Enter {provider_name} API key...",
+            key=f"{provider}_popup_input",
+        )
+
+        col1, col2 = st.columns(2)
+        with col1:
+            save = st.form_submit_button("Save", use_container_width=True)
+        with col2:
+            if current_key:
+                delete = st.form_submit_button("Delete", use_container_width=True)
+            else:
+                cancel = st.form_submit_button("Cancel", use_container_width=True)
+
+        if save and api_key:
+            success, error_msg = set_api_key(provider, api_key)
+            if success:
+                show_success(f"{provider_name} API key saved successfully!")
+                st.session_state[f"show_{provider}_popup"] = False
+                st.rerun()
+            else:
+                show_error(f"Failed to save API key: {error_msg}")
+
+        if current_key and delete:
+            success, message = remove_api_key(provider)
+            if success:
+                show_success(message)
+                st.session_state[f"show_{provider}_popup"] = False
+                st.rerun()
+            else:
+                show_error(message)
+
+        if not current_key and cancel:
+            st.session_state[f"show_{provider}_popup"] = False
+            st.rerun()
+
+
+def render_api_key_table() -> None:
+    """
+    Render a table of API providers using Streamlit's column layout for a native look.
+    This approach allows embedding interactive buttons directly in the table.
+    """
+    providers = get_available_providers()
+    if not providers:
+        show_info("No API providers are configured.")
+        return
+
+    col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
+    with col1:
+        st.markdown("**ID**")
+    with col2:
+        st.markdown("**Type**")
+    with col3:
+        st.markdown("**API Key**")
+    with col4:
+        st.markdown("**Actions**")
+
+    st.divider()
+
+    for provider in providers:
+        col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
+
+        with col1:
+            st.markdown(f"{provider.lower()}")
+
+        with col2:
+            st.markdown(f"{get_provider_display_name(provider)}")
+
+        with col3:
+            api_key = get_api_key(provider)
+            if api_key:
+                st.code(mask_api_key(api_key), language=None)
+            else:
+                st.markdown("No API Key set")
+
+        with col4:
+            if st.button(
+                "⚙️",
+                key=f"{provider}_action_btn",
+                help="Edit Provider",
+            ):
+                st.session_state[f"show_{provider}_popup"] = True
+
+            if st.session_state.get(f"show_{provider}_popup", False):
+                with st.popover("Edit Provider"):
+                    handle_api_key_popup(provider)
+
+        st.divider()
 
 
 def initialize_model_settings() -> str:
@@ -330,41 +465,6 @@ def _handle_api_key_actions(provider: str) -> bool:
     return False
 
 
-def render_compact_api_key_table() -> None:
-    """
-    Render a compact table of API providers with status and actions.
-
-    This creates a table-like UI with columns:
-    - ID: Provider name
-    - Type: Provider type (LLM/embeddings)
-    - API Key: Shows masked key if configured or "Not configured"
-    - Actions: Buttons to add/remove keys
-    """
-    providers = get_available_providers()
-    if not providers:
-        show_info("No API providers are configured in the system.")
-        return
-
-    st.markdown("### API Providers")
-    col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
-    with col1:
-        st.markdown("**ID**")
-    with col2:
-        st.markdown("**Type**")
-    with col3:
-        st.markdown("**API Key**")
-    with col4:
-        st.markdown("**Actions**")
-
-    st.divider()
-
-    for provider in providers:
-        rerun_needed = _handle_api_key_actions(provider)
-        if rerun_needed:
-            st.rerun()
-        st.divider()
-
-
 def render_model_selection_table() -> None:
     """
     Render a compact table of model settings for the active provider.
@@ -426,9 +526,6 @@ def render_unified_settings_page(on_save_callback: Callable | None = None) -> No
     """
     render_page_header("Settings", "Configure API keys and model settings for PaperChat")
 
-    with st.expander("API Keys", expanded=True):
-        render_compact_api_key_table()
-
     with st.expander("Model Selection", expanded=True):
         render_model_selection_table()
 
@@ -453,19 +550,20 @@ def render_settings_page(on_save_callback: Callable | None = None) -> None:
     Args:
         on_save_callback: Optional callback to execute after settings are saved
     """
+    add_api_table_css()
     st.header("⚙️ Settings")
-    if st.button("⬅️ Back to Chat", use_container_width=True):
+    if st.button("Back to Chat", icon="⬅️", type="tertiary", use_container_width=False):
         st.session_state.show_settings = False
         st.rerun()
 
-    st.divider()
+    st.subheader("Providers")
+    render_api_key_table()
 
-    st.write("Configure your chat experience")
-
+    st.subheader("Model & Retrieval Settings")
     settings = st.session_state.settings
 
     with st.form("settings_form"):
-        st.subheader("Model Settings")
+        st.markdown("### Model Settings")
         providers = list_available_providers()
         provider = st.selectbox(
             "LLM Provider",
@@ -505,7 +603,7 @@ def render_settings_page(on_save_callback: Callable | None = None) -> None:
             help="Maximum number of tokens (words/word pieces) in the model's response.",
         )
 
-        st.subheader("Retrieval Settings")
+        st.markdown("### Retrieval Settings")
         top_k = st.slider(
             "Number of context chunks",
             min_value=1,
