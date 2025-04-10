@@ -74,7 +74,7 @@ def handle_api_key_popup(provider: str) -> None:
 
     with st.form(key=f"{provider}_popup_form"):
         api_key = st.text_input(
-            "API Key",
+            label="Edit Provider API Key",
             value=current_key,
             type="password" if current_key else "default",
             placeholder=f"Enter {provider_name} API key...",
@@ -151,17 +151,8 @@ def render_api_key_table() -> None:
             else:
                 st.markdown("No API Key set")
 
-        with col4:
-            if st.button(
-                "⚙️",
-                key=f"{provider}_action_btn",
-                help="Edit Provider",
-            ):
-                st.session_state[f"show_{provider}_popup"] = True
-
-            if st.session_state.get(f"show_{provider}_popup", False):
-                with st.popover("Edit Provider"):
-                    handle_api_key_popup(provider)
+        with col4, st.popover("⚙️"):
+            handle_api_key_popup(provider)
 
         st.divider()
 
