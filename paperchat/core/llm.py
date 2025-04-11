@@ -1,11 +1,11 @@
 from pathlib import Path
 from typing import Any, Generator
 
+from ..llms.manager import LLMManager
+from ..utils.formatting import format_context
 from .embeddings import EmbeddingModel
 from .ingestion import process_document
-from .llms.manager import LLMManager
 from .retrieval import similarity_search
-from .utils.formatting import format_context
 
 
 class RAGPipeline:
