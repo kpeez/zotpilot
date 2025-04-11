@@ -14,11 +14,13 @@ from .common import (
     list_models,
     register_provider,
 )
+from .manager import LLMManager
 from .openai import OpenAIAdapter
 
 __all__ = [
     "PROVIDERS",
     "AnthropicAdapter",
+    "LLMManager",
     "LLMProvider",
     "OpenAIAdapter",
     "generate_response",
