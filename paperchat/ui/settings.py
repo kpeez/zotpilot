@@ -6,8 +6,8 @@ from typing import Callable
 
 import streamlit as st
 
-from paperchat.ui.api_settings import render_api_key_manager
-from paperchat.ui.common import (
+from paperchat.ui import (
+    render_api_key_manager,
     render_page_header,
     show_error,
     show_info,
@@ -379,7 +379,7 @@ def update_global_settings(provider: str, model: str, temperature: float) -> Non
             "top_k": 5,
         }
     else:
-        current_provider = st.session_state.config.get("provider_name")
+        # Just update the config - the refresh function will handle model recreation
         st.session_state.config.update(
             {
                 "model_id": model,
@@ -387,23 +387,6 @@ def update_global_settings(provider: str, model: str, temperature: float) -> Non
                 "provider_name": provider,
             }
         )
-
-        if current_provider != provider and "llm_manager" in st.session_state:
-            from paperchat.llms.manager import LLMManager
-            from paperchat.utils.api_keys import get_api_key
-
-            api_key = get_api_key(provider)
-            st.session_state.llm_manager = LLMManager(
-                config=st.session_state.config, api_key=api_key
-            )
-
-            if "rag_pipeline" in st.session_state:
-                from paperchat.core import RAGPipeline
-
-                st.session_state.rag_pipeline = RAGPipeline(
-                    llm_manager=st.session_state.llm_manager,
-                    embedding_model=st.session_state.embedding_model,
-                )
 
 
 def render_unified_model_settings() -> None:
