@@ -372,6 +372,7 @@ def update_global_settings(provider: str, model: str, temperature: float) -> Non
         temperature: Selected temperature value
     """
     if "settings" in st.session_state:
+        current_provider = st.session_state.settings.get("provider")
         st.session_state.settings.update(
             {
                 "model": model,
@@ -379,6 +380,12 @@ def update_global_settings(provider: str, model: str, temperature: float) -> Non
                 "provider": provider,
             }
         )
+
+        # If provider changed, recreate the LLM client
+        if current_provider != provider and "llm_client" in st.session_state:
+            from paperchat.llms.common import LLMClient
+
+            st.session_state.llm_client = LLMClient(provider=provider)
 
 
 def render_unified_model_settings() -> None:
