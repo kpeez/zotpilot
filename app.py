@@ -2,9 +2,10 @@ import os
 
 import streamlit as st
 
-from paperchat.core import EmbeddingModel, RAGPipeline
-from paperchat.llms import LLMManager
+from paperchat.core import EmbeddingModel
 from paperchat.ui import (
+    check_model_config_changes,
+    refresh_model_state,
     render_api_key_setup,
     render_main_content,
     render_settings_page,
@@ -70,16 +71,8 @@ def initialize_model_state() -> None:
     if "embedding_model" not in st.session_state:
         st.session_state.embedding_model = EmbeddingModel()
 
-    if "llm_manager" not in st.session_state:
-        provider_name = st.session_state.config.get("provider_name", DEFAULT_PROVIDER)
-        api_key = get_api_key(provider_name)
-        st.session_state.llm_manager = LLMManager(config=st.session_state.config, api_key=api_key)
-
-    if "rag_pipeline" not in st.session_state:
-        st.session_state.rag_pipeline = RAGPipeline(
-            llm_manager=st.session_state.llm_manager,
-            embedding_model=st.session_state.embedding_model,
-        )
+    if "llm_manager" not in st.session_state or "rag_pipeline" not in st.session_state:
+        refresh_model_state()
 
 
 def initialize_session() -> None:
@@ -99,7 +92,7 @@ def initialize_session() -> None:
 def main() -> None:
     """Main entry point for the Streamlit app."""
     initialize_session()
-
+    check_model_config_changes()
     provider_name = st.session_state.config.get("provider_name", DEFAULT_PROVIDER)
     provider_key = get_api_key(provider_name)
 
@@ -109,7 +102,7 @@ def main() -> None:
 
     st.title("🤖 PaperChat - Chat with your research library")
     if st.session_state.show_settings:
-        render_settings_page(on_save_callback=lambda: st.rerun())
+        render_settings_page(on_save_callback=lambda: refresh_model_state())
         st.stop()
 
     with st.sidebar:

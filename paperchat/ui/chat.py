@@ -4,12 +4,12 @@ Chat interface UI components for Streamlit.
 
 import streamlit as st
 
-from ..ui.common import render_page_header, show_info
 from ..utils.formatting import (
     format_response_with_citations,
     format_retrieved_chunks_for_display,
     process_citations,
 )
+from .common import check_model_config_changes, render_page_header
 
 
 def render_api_key_setup() -> None:
@@ -85,6 +85,9 @@ def render_chat_interface() -> None:
 
         with st.spinner("Generating response..."):
             try:
+                # Ensure the model state is up to date with the current configuration
+                check_model_config_changes()
+
                 active_doc_data = st.session_state.processed_documents[
                     st.session_state.active_document_hash
                 ]
@@ -151,6 +154,6 @@ def render_main_content() -> None:
         PaperChat will use AI to retrieve relevant information and provide answers based on the selected document.
         """)
     elif st.session_state.active_document_hash is None and st.session_state.processed_documents:
-        show_info("Please select a document from the sidebar to start chatting.")
+        st.info("Please select a document from the sidebar to start chatting.")
     else:
         render_chat_interface()

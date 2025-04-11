@@ -4,6 +4,11 @@ Common UI components.
 
 import streamlit as st
 
+from paperchat.core import RAGPipeline
+from paperchat.llms import LLMManager
+from paperchat.utils.api_keys import get_api_key
+from paperchat.utils.config import DEFAULT_MODEL, DEFAULT_PROVIDER
+
 
 def set_css_styles() -> None:
     """
@@ -99,6 +104,55 @@ def set_css_styles() -> None:
     )
 
 
+def refresh_model_state() -> None:
+    """
+    Refresh LLM manager and RAG pipeline with current config settings.
+
+    This function should be called whenever model settings change to ensure
+    the LLM provider and model are correctly updated.
+    """
+    provider_name = st.session_state.config.get("provider_name", DEFAULT_PROVIDER)
+    api_key = get_api_key(provider_name)
+
+    st.session_state.llm_manager = LLMManager(config=st.session_state.config, api_key=api_key)
+    st.session_state.rag_pipeline = RAGPipeline(
+        llm_manager=st.session_state.llm_manager,
+        embedding_model=st.session_state.embedding_model,
+    )
+
+    if "previous_config" not in st.session_state:
+        st.session_state.previous_config = {}
+
+    st.session_state.previous_config = {
+        "provider_name": provider_name,
+        "model_id": st.session_state.config.get("model_id", DEFAULT_MODEL),
+        "temperature": st.session_state.config.get("temperature", 0.7),
+    }
+
+
+def check_model_config_changes() -> bool:
+    """
+    Check if model configuration has changed and needs refresh.
+
+    Returns:
+        bool: True if config changed and model state was refreshed
+    """
+    if "previous_config" not in st.session_state:
+        refresh_model_state()
+        return True
+
+    prev_config = st.session_state.previous_config
+    current_config = st.session_state.config
+    # check for change in config
+    if prev_config.get("provider_name") != current_config.get("provider_name") or prev_config.get(
+        "model_id"
+    ) != current_config.get("model_id"):
+        refresh_model_state()
+        return True
+
+    return False
+
+
 def render_page_header(title: str, subtitle: str | None = None) -> None:
     """
     Render a consistent page header with title and optional subtitle.
@@ -111,43 +165,3 @@ def render_page_header(title: str, subtitle: str | None = None) -> None:
     if subtitle:
         st.markdown(f"**{subtitle}**")
     st.divider()
-
-
-def show_success(message: str) -> None:
-    """
-    Display a success message with consistent styling.
-
-    Args:
-        message: Success message to display
-    """
-    st.success(message)
-
-
-def show_info(message: str) -> None:
-    """
-    Display an information message with consistent styling.
-
-    Args:
-        message: Info message to display
-    """
-    st.info(message)
-
-
-def show_warning(message: str) -> None:
-    """
-    Display a warning message with consistent styling.
-
-    Args:
-        message: Warning message to display
-    """
-    st.warning(message)
-
-
-def show_error(message: str) -> None:
-    """
-    Display an error message with consistent styling.
-
-    Args:
-        message: Error message to display
-    """
-    st.error(message)

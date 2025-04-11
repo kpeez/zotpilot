@@ -9,7 +9,7 @@ import tempfile
 import streamlit as st
 
 from paperchat.core import process_document
-from paperchat.ui.common import show_info, show_warning
+from paperchat.ui.common import refresh_model_state
 from paperchat.ui.settings import (
     initialize_model_settings,
     update_global_settings,
@@ -42,7 +42,7 @@ def render_compact_settings_ui() -> None:
             )
 
     if not all_models:
-        show_warning("No models available. Please configure API keys in settings.")
+        st.warning("No models available. Please configure API keys in settings.")
         return
 
     st.markdown("**Model Selection**")
@@ -64,7 +64,6 @@ def render_compact_settings_ui() -> None:
     selected_model_id = all_models[selected_model]["model_id"]
 
     if selected_provider != active_provider or selected_model_id != active_model:
-        # Update config with the new provider and model
         st.session_state.config.update(
             {
                 "provider_name": selected_provider,
@@ -82,7 +81,6 @@ def render_compact_settings_ui() -> None:
         help="Controls randomness: 0=deterministic, 2=creative",
     )
 
-    # Update temperature
     st.session_state.config["temperature"] = temperature
 
     st.markdown("---")
@@ -157,7 +155,7 @@ def render_upload_section() -> None:
 def render_document_list() -> None:
     """Render the list of processed documents."""
     if not st.session_state.processed_documents:
-        show_info("No document loaded. Please upload a PDF file to start.")
+        st.info("No document loaded. Please upload a PDF file to start.")
         return
 
     st.header("📚 Processed Documents")
@@ -236,7 +234,6 @@ def render_model_selection() -> tuple[str | None, str | None]:
     selected_model_id = all_models[selected_model]["model_id"]
 
     if selected_provider != active_provider or selected_model_id != active_model:
-        # Update config with the new provider and model
         st.session_state.config.update(
             {
                 "provider_name": selected_provider,
@@ -246,6 +243,8 @@ def render_model_selection() -> tuple[str | None, str | None]:
 
         temperature = st.session_state.config.get("temperature", 0.7)
         update_global_settings(selected_provider, selected_model_id, temperature)
+        refresh_model_state()
+        st.success(f"Switched to {selected_provider.capitalize()} model: {selected_model_id}")
 
     return selected_provider, selected_model_id
 
@@ -264,9 +263,10 @@ def render_advanced_settings(selected_provider: str, selected_model_id: str) -> 
                 help="Controls randomness: 0=deterministic, 2=creative",
             )
 
-            if selected_provider in st.session_state.config:
+            if temperature != current_temp:
                 st.session_state.config["temperature"] = temperature
                 update_global_settings(selected_provider, selected_model_id, temperature)
+                refresh_model_state()
 
         st.markdown("**Retrieval settings:**")
         top_k = st.slider(
@@ -293,7 +293,7 @@ def render_sidebar() -> None:
             render_document_list()
     else:
         with st.expander("Current Document", expanded=False):
-            show_info("No document loaded. Please upload a PDF file to start.")
+            st.info("No document loaded. Please upload a PDF file to start.")
 
     st.divider()
 
