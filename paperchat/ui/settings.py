@@ -6,14 +6,8 @@ from typing import Callable
 
 import streamlit as st
 
-from paperchat.ui import (
-    render_api_key_manager,
-    render_page_header,
-    show_error,
-    show_info,
-    show_success,
-    show_warning,
-)
+from paperchat.ui.api_settings import render_api_key_manager
+from paperchat.ui.common import render_page_header
 from paperchat.utils.api_keys import (
     get_api_key,
     get_available_providers,
@@ -81,20 +75,20 @@ def handle_api_key_popup(provider: str) -> None:
         if save and api_key:
             success, error_msg = set_api_key(provider, api_key)
             if success:
-                show_success(f"{provider_name} API key saved successfully!")
+                st.success(f"{provider_name} API key saved successfully!")
                 st.session_state[f"show_{provider}_popup"] = False
                 st.rerun()
             else:
-                show_error(f"Failed to save API key: {error_msg}")
+                st.error(f"Failed to save API key: {error_msg}")
 
         if current_key and delete:
             success, message = remove_api_key(provider)
             if success:
-                show_success(message)
+                st.success(message)
                 st.session_state[f"show_{provider}_popup"] = False
                 st.rerun()
             else:
-                show_error(message)
+                st.error(message)
 
         if not current_key and cancel:
             st.session_state[f"show_{provider}_popup"] = False
@@ -123,7 +117,7 @@ def render_model_table() -> None:
             )
 
     if not all_models:
-        show_info("No models available. Please configure API keys first.")
+        st.info("No models available. Please configure API keys first.")
         return
 
     active_provider = st.session_state.get("active_provider", "")
@@ -178,7 +172,7 @@ def render_model_table() -> None:
                     ),
                 )
 
-                show_success(f"Selected {model_info['model_id']} as active model")
+                st.success(f"Selected {model_info['model_id']} as active model")
                 st.rerun()
 
         st.divider()
@@ -192,7 +186,7 @@ def render_api_key_table() -> None:
     providers = get_available_providers()
 
     if not providers:
-        show_info("No API providers are configured.")
+        st.info("No API providers are configured.")
         return
 
     col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
@@ -245,7 +239,7 @@ def render_model_selector(provider: str) -> str:
     model_ids = [model["id"] for model in models]
 
     if not model_ids:
-        show_warning(f"No models configured for {provider.capitalize()}.")
+        st.warning(f"No models configured for {provider.capitalize()}.")
         return ""
 
     current_settings = st.session_state.provider_settings.get(provider, {})
@@ -309,7 +303,7 @@ def render_provider_selector() -> str:
     configured_providers = [p for p in providers if get_api_key(p)]
 
     if not configured_providers:
-        show_warning("No API keys configured. Please add provider API keys in settings.")
+        st.warning("No API keys configured. Please add provider API keys in settings.")
         return st.session_state.active_provider
 
     selected_provider = st.radio(
@@ -379,7 +373,6 @@ def update_global_settings(provider: str, model: str, temperature: float) -> Non
             "top_k": 5,
         }
     else:
-        # Just update the config - the refresh function will handle model recreation
         st.session_state.config.update(
             {
                 "model_id": model,
@@ -415,7 +408,7 @@ def render_model_selection_table() -> None:
     model_ids = [model["id"] for model in models]
 
     if not model_ids:
-        show_warning(f"No models configured for {active_provider.capitalize()}.")
+        st.warning(f"No models configured for {active_provider.capitalize()}.")
         return
 
     st.markdown(f"### {active_provider.capitalize()} Models")
@@ -543,7 +536,7 @@ def render_settings_tabs(on_save_callback: Callable | None = None) -> None:
     providers = get_available_providers()
 
     if not providers:
-        show_info("No API providers configured.")
+        st.info("No API providers configured.")
         return
 
     tab_labels = [provider.capitalize() for provider in providers]
@@ -592,10 +585,10 @@ def _handle_api_key_actions(provider: str) -> bool:
 
                 success, message = remove_api_key(provider)
                 if success:
-                    show_success(message)
+                    st.success(message)
                     return True
                 else:
-                    show_error(message)
+                    st.error(message)
         elif st.button("Add Key", key=f"add_{provider}_btn"):
             st.session_state[f"show_{provider}_form"] = True
 
@@ -701,4 +694,4 @@ def render_settings_page(on_save_callback: Callable | None = None) -> None:
             if active_provider and active_model:
                 update_global_settings(active_provider, active_model, temperature)
 
-            show_success("Settings saved!")
+            st.success("Settings saved!")

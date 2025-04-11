@@ -9,7 +9,7 @@ import tempfile
 import streamlit as st
 
 from paperchat.core import process_document
-from paperchat.ui.common import refresh_model_state, show_info, show_warning
+from paperchat.ui.common import refresh_model_state
 from paperchat.ui.settings import (
     initialize_model_settings,
     update_global_settings,
@@ -42,7 +42,7 @@ def render_compact_settings_ui() -> None:
             )
 
     if not all_models:
-        show_warning("No models available. Please configure API keys in settings.")
+        st.warning("No models available. Please configure API keys in settings.")
         return
 
     st.markdown("**Model Selection**")
@@ -155,7 +155,7 @@ def render_upload_section() -> None:
 def render_document_list() -> None:
     """Render the list of processed documents."""
     if not st.session_state.processed_documents:
-        show_info("No document loaded. Please upload a PDF file to start.")
+        st.info("No document loaded. Please upload a PDF file to start.")
         return
 
     st.header("📚 Processed Documents")
@@ -293,7 +293,7 @@ def render_sidebar() -> None:
             render_document_list()
     else:
         with st.expander("Current Document", expanded=False):
-            show_info("No document loaded. Please upload a PDF file to start.")
+            st.info("No document loaded. Please upload a PDF file to start.")
 
     st.divider()
 
