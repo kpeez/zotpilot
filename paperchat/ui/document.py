@@ -27,11 +27,8 @@ def render_compact_settings_ui() -> None:
     )
 
     all_models = []
-    active_provider = st.session_state.active_provider
-    active_model = ""
-
-    if active_provider in st.session_state.get("provider_settings", {}):
-        active_model = st.session_state.provider_settings[active_provider].get("model", "")
+    active_provider = st.session_state.config.get("provider_name", "")
+    active_model = st.session_state.config.get("model_id", "")
 
     for provider in get_available_providers():
         if not get_api_key(provider):
@@ -67,14 +64,15 @@ def render_compact_settings_ui() -> None:
     selected_model_id = all_models[selected_model]["model_id"]
 
     if selected_provider != active_provider or selected_model_id != active_model:
-        st.session_state.active_provider = selected_provider
-        if selected_provider not in st.session_state.provider_settings:
-            st.session_state.provider_settings[selected_provider] = {"temperature": 0.7}
-        st.session_state.provider_settings[selected_provider]["model"] = selected_model_id
+        # Update config with the new provider and model
+        st.session_state.config.update(
+            {
+                "provider_name": selected_provider,
+                "model_id": selected_model_id,
+            }
+        )
 
-    current_temp = st.session_state.provider_settings.get(selected_provider, {}).get(
-        "temperature", 0.7
-    )
+    current_temp = st.session_state.config.get("temperature", 0.7)
     temperature = st.slider(
         "Temperature",
         min_value=0.0,
@@ -84,8 +82,8 @@ def render_compact_settings_ui() -> None:
         help="Controls randomness: 0=deterministic, 2=creative",
     )
 
-    if selected_provider in st.session_state.provider_settings:
-        st.session_state.provider_settings[selected_provider]["temperature"] = temperature
+    # Update temperature
+    st.session_state.config["temperature"] = temperature
 
     st.markdown("---")
     st.markdown("**Retrieval settings:**")
@@ -93,14 +91,13 @@ def render_compact_settings_ui() -> None:
         "Chunks to retrieve",
         min_value=1,
         max_value=10,
-        value=st.session_state.settings.get("top_k", 5),
+        value=st.session_state.config.get("top_k", 5),
         help="Higher values retrieve more chunks but may include less relevant information",
     )
 
     update_global_settings(selected_provider, selected_model_id, temperature)
 
-    if "settings" in st.session_state:
-        st.session_state.settings.update({"top_k": top_k})
+    st.session_state.config["top_k"] = top_k
 
 
 def render_upload_section() -> None:
@@ -205,11 +202,8 @@ def render_model_selection() -> tuple[str | None, str | None]:
     from paperchat.utils.api_keys import get_api_key, get_available_providers
 
     all_models = []
-    active_provider = st.session_state.active_provider
-    active_model = ""
-
-    if active_provider in st.session_state.get("provider_settings", {}):
-        active_model = st.session_state.provider_settings[active_provider].get("model", "")
+    active_provider = st.session_state.config.get("provider_name", "")
+    active_model = st.session_state.config.get("model_id", "")
 
     for provider in get_available_providers():
         if not get_api_key(provider):
@@ -242,12 +236,15 @@ def render_model_selection() -> tuple[str | None, str | None]:
     selected_model_id = all_models[selected_model]["model_id"]
 
     if selected_provider != active_provider or selected_model_id != active_model:
-        st.session_state.active_provider = selected_provider
-        if selected_provider not in st.session_state.provider_settings:
-            st.session_state.provider_settings[selected_provider] = {"temperature": 0.7}
-        st.session_state.provider_settings[selected_provider]["model"] = selected_model_id
+        # Update config with the new provider and model
+        st.session_state.config.update(
+            {
+                "provider_name": selected_provider,
+                "model_id": selected_model_id,
+            }
+        )
 
-        temperature = st.session_state.provider_settings[selected_provider].get("temperature", 0.7)
+        temperature = st.session_state.config.get("temperature", 0.7)
         update_global_settings(selected_provider, selected_model_id, temperature)
 
     return selected_provider, selected_model_id
@@ -257,9 +254,7 @@ def render_advanced_settings(selected_provider: str, selected_model_id: str) -> 
     """Render advanced settings like temperature and retrieval settings."""
     with st.expander("Advanced Settings", expanded=False):
         if selected_provider and selected_model_id:
-            current_temp = st.session_state.provider_settings.get(selected_provider, {}).get(
-                "temperature", 0.7
-            )
+            current_temp = st.session_state.config.get("temperature", 0.7)
             temperature = st.slider(
                 "Temperature",
                 min_value=0.0,
@@ -269,8 +264,8 @@ def render_advanced_settings(selected_provider: str, selected_model_id: str) -> 
                 help="Controls randomness: 0=deterministic, 2=creative",
             )
 
-            if selected_provider in st.session_state.provider_settings:
-                st.session_state.provider_settings[selected_provider]["temperature"] = temperature
+            if selected_provider in st.session_state.config:
+                st.session_state.config["temperature"] = temperature
                 update_global_settings(selected_provider, selected_model_id, temperature)
 
         st.markdown("**Retrieval settings:**")
@@ -278,12 +273,12 @@ def render_advanced_settings(selected_provider: str, selected_model_id: str) -> 
             "Chunks to retrieve",
             min_value=1,
             max_value=10,
-            value=st.session_state.settings.get("top_k", 5),
+            value=st.session_state.config.get("top_k", 5),
             help="Higher values retrieve more chunks but may include less relevant information",
         )
 
-        if "settings" in st.session_state:
-            st.session_state.settings.update({"top_k": top_k})
+        if "config" in st.session_state:
+            st.session_state.config["top_k"] = top_k
 
 
 def render_sidebar() -> None:
