@@ -77,6 +77,7 @@ def get_provider(provider_name: str = DEFAULT_PROVIDER) -> Type[LLMProvider]:
     if provider is None:
         supported = ", ".join(PROVIDERS.keys())
         raise ValueError(f"Unsupported provider: {provider_name}. Supported providers: {supported}")
+
     return provider
 
 
@@ -92,6 +93,7 @@ def get_client(provider_name: str = DEFAULT_PROVIDER, api_key: str | None = None
         Provider client instance
     """
     provider = get_provider(provider_name)
+
     return provider.get_client(api_key)
 
 
@@ -120,6 +122,7 @@ def generate_response(
         Generated response
     """
     provider = get_provider(provider_name)
+
     return provider.generate_response(
         query=query,
         context=context,
@@ -155,6 +158,7 @@ def generate_streaming_response(
         Chunks of the generated response
     """
     provider = get_provider(provider_name)
+
     yield from provider.generate_streaming_response(
         query=query,
         context=context,
@@ -183,6 +187,7 @@ def list_available_providers() -> list[str]:
     Returns:
         List of provider names
     """
+
     return list(PROVIDERS.keys())
 
 
@@ -197,4 +202,5 @@ def list_models(provider_name: str = DEFAULT_PROVIDER) -> list[dict[str, Any]]:
         List of model information dictionaries
     """
     provider = get_provider(provider_name)
+
     return provider.list_models()

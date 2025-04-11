@@ -85,9 +85,6 @@ def main() -> None:
     st.title("🤖 PaperChat - Chat with your research library")
     if st.session_state.show_settings:
         render_settings_page(on_save_callback=lambda: st.rerun())
-        if st.button("⬅️ Back to Chat"):
-            st.session_state.show_settings = False
-            st.rerun()
         st.stop()
 
     with st.sidebar:

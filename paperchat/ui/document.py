@@ -20,52 +20,72 @@ def render_compact_settings_ui() -> None:
     """Render a compact settings UI for the sidebar."""
     initialize_model_settings()
 
-    selected_provider = st.session_state.active_provider
+    from paperchat.llms.common import list_models
+    from paperchat.utils.api_keys import (
+        get_api_key,
+        get_available_providers,
+    )
 
-    providers = list(st.session_state.provider_settings)
-    if providers:
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("**Provider:**")
-        with col2:
-            provider_index = (
-                providers.index(selected_provider) if selected_provider in providers else 0
+    all_models = []
+    active_provider = st.session_state.active_provider
+    active_model = ""
+
+    if active_provider in st.session_state.get("provider_settings", {}):
+        active_model = st.session_state.provider_settings[active_provider].get("model", "")
+
+    for provider in get_available_providers():
+        if not get_api_key(provider):
+            continue
+
+        models = list_models(provider_name=provider)
+        for model in models:
+            model_display = f"{model['id']}"
+            all_models.append(
+                {"display": model_display, "provider": provider, "model_id": model["id"]}
             )
-            selected_provider = st.radio(
-                "",
-                options=providers,
-                format_func=lambda x: x.capitalize(),
-                index=provider_index,
-                key="sidebar_provider_selector",
-                horizontal=True,
-                label_visibility="collapsed",
-            )
-    else:
-        show_warning("No providers configured. Please add API keys in settings.")
+
+    if not all_models:
+        show_warning("No models available. Please configure API keys in settings.")
         return
 
-    current_settings = st.session_state.provider_settings.get(selected_provider, {})
+    st.markdown("**Model Selection**")
 
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.markdown("**Model:**")
-    with col2:
-        all_models = (
-            ["gpt-4o", "gpt-4o-mini"]
-            if selected_provider == "openai"
-            else ["claude-3.7-sonnet", "claude-3.5-sonnet"]
-        )
-        selected_model = st.selectbox(
-            "",
-            options=all_models,
-            index=all_models.index(current_settings.get("model", all_models[0]))
-            if current_settings.get("model") in all_models
-            else 0,
-            label_visibility="collapsed",
-        )
+    selected_index = 0
+    for i, model_info in enumerate(all_models):
+        if model_info["provider"] == active_provider and model_info["model_id"] == active_model:
+            selected_index = i
+            break
+
+    selected_model = st.selectbox(
+        "Select model:",
+        options=range(len(all_models)),
+        format_func=lambda i: all_models[i]["display"],
+        index=selected_index,
+    )
+
+    selected_provider = all_models[selected_model]["provider"]
+    selected_model_id = all_models[selected_model]["model_id"]
+
+    if selected_provider != active_provider or selected_model_id != active_model:
+        st.session_state.active_provider = selected_provider
+        if selected_provider not in st.session_state.provider_settings:
+            st.session_state.provider_settings[selected_provider] = {"temperature": 0.7}
+        st.session_state.provider_settings[selected_provider]["model"] = selected_model_id
+
+    current_temp = st.session_state.provider_settings.get(selected_provider, {}).get(
+        "temperature", 0.7
+    )
+    temperature = st.slider(
+        "Temperature",
+        min_value=0.0,
+        max_value=2.0,
+        value=current_temp,
+        step=0.1,
+        help="Controls randomness: 0=deterministic, 2=creative",
+    )
 
     if selected_provider in st.session_state.provider_settings:
-        st.session_state.provider_settings[selected_provider]["model"] = selected_model
+        st.session_state.provider_settings[selected_provider]["temperature"] = temperature
 
     st.markdown("---")
     st.markdown("**Retrieval settings:**")
@@ -77,10 +97,7 @@ def render_compact_settings_ui() -> None:
         help="Higher values retrieve more chunks but may include less relevant information",
     )
 
-    temperature = st.session_state.provider_settings.get(selected_provider, {}).get(
-        "temperature", 0.7
-    )
-    update_global_settings(selected_provider, selected_model, temperature)
+    update_global_settings(selected_provider, selected_model_id, temperature)
 
     if "settings" in st.session_state:
         st.session_state.settings.update({"top_k": top_k})
@@ -181,6 +198,94 @@ def render_document_list() -> None:
             st.markdown(f"*...and {num_chunks - 5} more chunks*")
 
 
+def render_model_selection() -> tuple[str | None, str | None]:
+    """Render the model selection dropdown in the sidebar."""
+    initialize_model_settings()
+    from paperchat.llms.common import list_models
+    from paperchat.utils.api_keys import get_api_key, get_available_providers
+
+    all_models = []
+    active_provider = st.session_state.active_provider
+    active_model = ""
+
+    if active_provider in st.session_state.get("provider_settings", {}):
+        active_model = st.session_state.provider_settings[active_provider].get("model", "")
+
+    for provider in get_available_providers():
+        if not get_api_key(provider):
+            continue
+
+        models = list_models(provider_name=provider)
+        for model in models:
+            model_display = f"{model['id']}"
+            all_models.append(
+                {"display": model_display, "provider": provider, "model_id": model["id"]}
+            )
+
+    if not all_models:
+        return None, None
+
+    selected_index = 0
+    for i, model_info in enumerate(all_models):
+        if model_info["provider"] == active_provider and model_info["model_id"] == active_model:
+            selected_index = i
+            break
+
+    selected_model = st.selectbox(
+        "Model:",
+        options=range(len(all_models)),
+        format_func=lambda i: all_models[i]["display"],
+        index=selected_index,
+    )
+
+    selected_provider = all_models[selected_model]["provider"]
+    selected_model_id = all_models[selected_model]["model_id"]
+
+    if selected_provider != active_provider or selected_model_id != active_model:
+        st.session_state.active_provider = selected_provider
+        if selected_provider not in st.session_state.provider_settings:
+            st.session_state.provider_settings[selected_provider] = {"temperature": 0.7}
+        st.session_state.provider_settings[selected_provider]["model"] = selected_model_id
+
+        temperature = st.session_state.provider_settings[selected_provider].get("temperature", 0.7)
+        update_global_settings(selected_provider, selected_model_id, temperature)
+
+    return selected_provider, selected_model_id
+
+
+def render_advanced_settings(selected_provider: str, selected_model_id: str) -> None:
+    """Render advanced settings like temperature and retrieval settings."""
+    with st.expander("Advanced Settings", expanded=False):
+        if selected_provider and selected_model_id:
+            current_temp = st.session_state.provider_settings.get(selected_provider, {}).get(
+                "temperature", 0.7
+            )
+            temperature = st.slider(
+                "Temperature",
+                min_value=0.0,
+                max_value=2.0,
+                value=current_temp,
+                step=0.1,
+                help="Controls randomness: 0=deterministic, 2=creative",
+            )
+
+            if selected_provider in st.session_state.provider_settings:
+                st.session_state.provider_settings[selected_provider]["temperature"] = temperature
+                update_global_settings(selected_provider, selected_model_id, temperature)
+
+        st.markdown("**Retrieval settings:**")
+        top_k = st.slider(
+            "Chunks to retrieve",
+            min_value=1,
+            max_value=10,
+            value=st.session_state.settings.get("top_k", 5),
+            help="Higher values retrieve more chunks but may include less relevant information",
+        )
+
+        if "settings" in st.session_state:
+            st.session_state.settings.update({"top_k": top_k})
+
+
 def render_sidebar() -> None:
     """Render the app sidebar."""
     st.header("📄 Document")
@@ -203,8 +308,8 @@ def render_sidebar() -> None:
         st.session_state.show_settings = True
         st.rerun()
 
-    with st.expander("Model & Retrieval", expanded=False):
-        render_compact_settings_ui()
+    selected_provider, selected_model_id = render_model_selection()
+    render_advanced_settings(selected_provider, selected_model_id)
 
     st.divider()
 

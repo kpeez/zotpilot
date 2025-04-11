@@ -14,55 +14,287 @@ from paperchat.ui.common import (
     show_success,
     show_warning,
 )
-from paperchat.utils.api_keys import get_api_key, get_available_providers
-
-from ..llms.common import list_available_providers, list_models
-from ..utils.config import (
-    DEFAULT_MAX_TOKENS,
-    DEFAULT_MODEL,
-    DEFAULT_PROVIDER,
-    DEFAULT_TEMPERATURE,
+from paperchat.utils.api_keys import (
+    get_api_key,
+    get_available_providers,
+    get_provider_display_name,
+    mask_api_key,
+    remove_api_key,
+    set_api_key,
 )
 
-PROVIDER_MODELS = {
-    "openai": ["gpt-4o", "gpt-4o-mini"],
-    "anthropic": ["claude-3.7-sonnet", "claude-3.5-sonnet", "claude-3.5-haiku"],
-    # TODO: add gemini models
-}
+from ..llms.common import list_models
 
 
-def initialize_model_settings() -> str:
+def add_api_table_css() -> None:
     """
-    Initialize model settings in session state and return active provider.
+    Add custom CSS for the API key table styling.
+    """
+    st.markdown(
+        """
+    <style>
+    /* Code block styling for masked keys */
+    pre {
+        padding: 0.5rem !important;
+        background-color: #f0f0f0 !important;
+        border-radius: 4px !important;
+        margin: 0 !important;
+    }
+    .stDivider {
+        margin-top: 0.5rem !important;
+        margin-bottom: 0.5rem !important;
+    }
+    </style>
+    """,
+        unsafe_allow_html=True,
+    )
+
+
+def handle_api_key_popup(provider: str) -> None:
+    """
+    Handle the API key popup interaction for a provider.
+
+    Args:
+        provider: Provider ID (e.g., 'openai')
+    """
+    provider_name = get_provider_display_name(provider)
+    current_key = get_api_key(provider) or ""
+
+    with st.form(key=f"{provider}_popup_form"):
+        api_key = st.text_input(
+            label="Edit Provider API Key",
+            value=current_key,
+            type="password" if current_key else "default",
+            placeholder=f"Enter {provider_name} API key...",
+            key=f"{provider}_popup_input",
+        )
+
+        col1, col2 = st.columns(2)
+        with col1:
+            save = st.form_submit_button("Save", use_container_width=True)
+        with col2:
+            if current_key:
+                delete = st.form_submit_button("Delete", use_container_width=True)
+            else:
+                cancel = st.form_submit_button("Cancel", use_container_width=True)
+
+        if save and api_key:
+            success, error_msg = set_api_key(provider, api_key)
+            if success:
+                show_success(f"{provider_name} API key saved successfully!")
+                st.session_state[f"show_{provider}_popup"] = False
+                st.rerun()
+            else:
+                show_error(f"Failed to save API key: {error_msg}")
+
+        if current_key and delete:
+            success, message = remove_api_key(provider)
+            if success:
+                show_success(message)
+                st.session_state[f"show_{provider}_popup"] = False
+                st.rerun()
+            else:
+                show_error(message)
+
+        if not current_key and cancel:
+            st.session_state[f"show_{provider}_popup"] = False
+            st.rerun()
+
+
+def render_model_table() -> None:
+    """
+    Render a table of all available models across providers.
+    """
+    st.markdown("#### Available Models")
+
+    all_models = []
+    for provider in get_available_providers():
+        if not get_api_key(provider):
+            continue
+
+        models = list_models(provider_name=provider)
+        for model in models:
+            all_models.append(
+                {
+                    "provider": provider,
+                    "provider_display": get_provider_display_name(provider),
+                    "model_id": model["id"],
+                }
+            )
+
+    if not all_models:
+        show_info("No models available. Please configure API keys first.")
+        return
+
+    active_provider = st.session_state.get("active_provider", "")
+    active_model = ""
+    if active_provider in st.session_state.get("provider_settings", {}):
+        active_model = st.session_state.provider_settings[active_provider].get("model", "")
+
+    # Create a simple table with 3 columns
+    col1, col2, col3 = st.columns([2, 3, 2])
+    with col1:
+        st.markdown("**Provider**")
+    with col2:
+        st.markdown("**Model ID**")
+    with col3:
+        st.markdown("**Status**")
+
+    st.divider()
+
+    for model_info in all_models:
+        col1, col2, col3 = st.columns([2, 3, 2])
+
+        with col1:
+            st.markdown(f"{model_info['provider_display']}")
+
+        with col2:
+            st.markdown(f"`{model_info['model_id']}`")
+
+        with col3:
+            is_selected = (
+                model_info["provider"] == active_provider and model_info["model_id"] == active_model
+            )
+            if is_selected:
+                st.markdown("✅ **Active**")
+            elif st.button(
+                "Select", key=f"select_{model_info['provider']}_{model_info['model_id']}"
+            ):
+                st.session_state.active_provider = model_info["provider"]
+
+                if model_info["provider"] not in st.session_state.provider_settings:
+                    st.session_state.provider_settings[model_info["provider"]] = {
+                        "temperature": 0.7
+                    }
+
+                st.session_state.provider_settings[model_info["provider"]]["model"] = model_info[
+                    "model_id"
+                ]
+
+                update_global_settings(
+                    model_info["provider"],
+                    model_info["model_id"],
+                    st.session_state.provider_settings[model_info["provider"]].get(
+                        "temperature", 0.7
+                    ),
+                )
+
+                show_success(f"Selected {model_info['model_id']} as active model")
+                st.rerun()
+
+        st.divider()
+
+
+def render_api_key_table() -> None:
+    """
+    Render a table of API providers using Streamlit's column layout for a native look.
+    This approach allows embedding interactive buttons directly in the table.
+    """
+    providers = get_available_providers()
+
+    if not providers:
+        show_info("No API providers are configured.")
+        return
+
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+    with col1:
+        st.markdown("**ID**")
+    with col2:
+        st.markdown("**Type**")
+    with col3:
+        st.markdown("**API Key**")
+    with col4:
+        st.markdown("**Actions**")
+
+    st.divider()
+
+    for provider in providers:
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+
+        with col1:
+            st.markdown(f"{provider.lower()}")
+
+        with col2:
+            st.markdown(f"{get_provider_display_name(provider)}")
+
+        with col3:
+            api_key = get_api_key(provider)
+            if api_key:
+                st.code(mask_api_key(api_key), language=None)
+            else:
+                st.markdown("No API Key set")
+
+        with col4, st.popover("⚙️"):
+            handle_api_key_popup(provider)
+
+        st.divider()
+
+
+def render_model_selector(provider: str) -> str:
+    """
+    Render model selection dropdown for the specified provider.
+
+    Args:
+        provider: Provider ID
 
     Returns:
-        The active provider ID
+        The selected model ID
     """
+    st.subheader("2️⃣ Model")
 
-    if "provider_settings" not in st.session_state:
-        st.session_state.provider_settings = {}
+    models = list_models(provider_name=provider)
+    model_ids = [model["id"] for model in models]
 
-    if "active_provider" not in st.session_state:
-        providers = get_available_providers()
+    if not model_ids:
+        show_warning(f"No models configured for {provider.capitalize()}.")
+        return ""
 
-        for provider in providers:
-            if get_api_key(provider):
-                st.session_state.active_provider = provider
-                break
+    current_settings = st.session_state.provider_settings.get(provider, {})
+    current_model = current_settings.get("model", "")
 
-        if "active_provider" not in st.session_state:
-            st.session_state.active_provider = providers[0] if providers else "openai"
+    model_index = model_ids.index(current_model) if current_model in model_ids else 0
 
-    active_provider = st.session_state.active_provider
+    selected_model = st.selectbox(
+        f"Select {provider.capitalize()} Model:",
+        options=model_ids,
+        index=model_index,
+        key=f"{provider}_model_selector",
+    )
 
-    if active_provider not in st.session_state.provider_settings:
-        models = PROVIDER_MODELS.get(active_provider, [])
-        st.session_state.provider_settings[active_provider] = {
-            "model": models[0] if models else "",
-            "temperature": 0.7,
-        }
+    if "provider_settings" in st.session_state and provider in st.session_state.provider_settings:
+        st.session_state.provider_settings[provider]["model"] = selected_model
 
-    return active_provider
+    return selected_model
+
+
+def render_model_settings(provider: str) -> None:
+    """
+    Render model-specific settings UI for a provider.
+
+    Args:
+        provider: Provider name (e.g., "openai")
+    """
+    provider = provider.lower()
+    models = list_models(provider_name=provider)
+    model_ids = [model["id"] for model in models]
+
+    if model_ids:
+        st.selectbox(
+            "Default model",
+            model_ids,
+            help="Select which model to use by default",
+            key=f"{provider}_default_model",
+        )
+
+    st.slider(
+        "Temperature",
+        min_value=0.0,
+        max_value=2.0,
+        value=0.7,
+        step=0.1,
+        help="Controls randomness in responses: 0=deterministic, 1=creative",
+        key=f"{provider}_temperature",
+    )
 
 
 def render_provider_selector() -> str:
@@ -97,41 +329,6 @@ def render_provider_selector() -> str:
         st.rerun()
 
     return selected_provider
-
-
-def render_model_selector(provider: str) -> str:
-    """
-    Render model selection dropdown for the specified provider.
-
-    Args:
-        provider: Provider ID
-
-    Returns:
-        The selected model ID
-    """
-    st.subheader("2️⃣ Model")
-
-    models = PROVIDER_MODELS.get(provider, [])
-    if not models:
-        show_warning(f"No models configured for {provider.capitalize()}.")
-        return ""
-
-    current_settings = st.session_state.provider_settings.get(provider, {})
-    current_model = current_settings.get("model", "")
-
-    model_index = models.index(current_model) if current_model in models else 0
-
-    selected_model = st.selectbox(
-        f"Select {provider.capitalize()} Model:",
-        options=models,
-        index=model_index,
-        key=f"{provider}_model_selector",
-    )
-
-    if "provider_settings" in st.session_state and provider in st.session_state.provider_settings:
-        st.session_state.provider_settings[provider]["model"] = selected_model
-
-    return selected_model
 
 
 def render_parameter_settings(provider: str) -> float:
@@ -200,32 +397,94 @@ def render_unified_model_settings() -> None:
     update_global_settings(selected_provider, selected_model, temperature)
 
 
-def render_model_settings(provider: str) -> None:
+def render_model_selection_table() -> None:
     """
-    Render model-specific settings UI for a provider.
-
-    Args:
-        provider: Provider name (e.g., "openai")
+    Render a compact table of model settings for the active provider.
     """
-    provider = provider.lower()
-    models = PROVIDER_MODELS.get(provider, [])
-    if models:
-        st.selectbox(
-            "Default model",
-            models,
-            help="Select which model to use by default",
-            key=f"{provider}_default_model",
-        )
+    active_provider = initialize_model_settings()
 
-    st.slider(
-        "Temperature",
+    models = list_models(provider_name=active_provider)
+    model_ids = [model["id"] for model in models]
+
+    if not model_ids:
+        show_warning(f"No models configured for {active_provider.capitalize()}.")
+        return
+
+    st.markdown(f"### {active_provider.capitalize()} Models")
+
+    st.radio(
+        "Provider:",
+        options=[p for p in get_available_providers() if get_api_key(p)],
+        format_func=lambda x: x.capitalize(),
+        index=0,
+        key="provider_table_selector",
+        horizontal=True,
+        on_change=lambda: st.session_state.update(
+            {"active_provider": st.session_state.provider_table_selector}
+        ),
+    )
+
+    current_settings = st.session_state.provider_settings.get(active_provider, {})
+    current_model = current_settings.get("model", model_ids[0] if model_ids else "")
+
+    selected_model = st.selectbox(
+        "Model:",
+        options=model_ids,
+        index=model_ids.index(current_model) if current_model in model_ids else 0,
+        key=f"{active_provider}_model_table_selector",
+    )
+
+    temperature = st.slider(
+        "Temperature:",
         min_value=0.0,
         max_value=2.0,
-        value=0.7,
+        value=current_settings.get("temperature", 0.7),
         step=0.1,
-        help="Controls randomness in responses: 0=deterministic, 1=creative",
-        key=f"{provider}_temperature",
+        help="Controls randomness in responses: 0=deterministic, higher=more creative",
     )
+
+    if active_provider in st.session_state.provider_settings:
+        st.session_state.provider_settings[active_provider].update(
+            {"model": selected_model, "temperature": temperature}
+        )
+
+    update_global_settings(active_provider, selected_model, temperature)
+
+
+def initialize_model_settings() -> str:
+    """
+    Initialize model settings in session state and return active provider.
+
+    Returns:
+        The active provider ID
+    """
+
+    if "provider_settings" not in st.session_state:
+        st.session_state.provider_settings = {}
+
+    if "active_provider" not in st.session_state:
+        providers = get_available_providers()
+
+        for provider in providers:
+            if get_api_key(provider):
+                st.session_state.active_provider = provider
+                break
+
+        if "active_provider" not in st.session_state:
+            st.session_state.active_provider = providers[0] if providers else "openai"
+
+    active_provider = st.session_state.active_provider
+
+    if active_provider not in st.session_state.provider_settings:
+        models = list_models(provider_name=active_provider)
+        model_ids = [model["id"] for model in models]
+
+        st.session_state.provider_settings[active_provider] = {
+            "model": model_ids[0] if model_ids else "",
+            "temperature": 0.7,
+        }
+
+    return active_provider
 
 
 def render_provider_settings(provider: str, on_save_callback: Callable | None = None) -> None:
@@ -330,93 +589,6 @@ def _handle_api_key_actions(provider: str) -> bool:
     return False
 
 
-def render_compact_api_key_table() -> None:
-    """
-    Render a compact table of API providers with status and actions.
-
-    This creates a table-like UI with columns:
-    - ID: Provider name
-    - Type: Provider type (LLM/embeddings)
-    - API Key: Shows masked key if configured or "Not configured"
-    - Actions: Buttons to add/remove keys
-    """
-    providers = get_available_providers()
-    if not providers:
-        show_info("No API providers are configured in the system.")
-        return
-
-    st.markdown("### API Providers")
-    col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
-    with col1:
-        st.markdown("**ID**")
-    with col2:
-        st.markdown("**Type**")
-    with col3:
-        st.markdown("**API Key**")
-    with col4:
-        st.markdown("**Actions**")
-
-    st.divider()
-
-    for provider in providers:
-        rerun_needed = _handle_api_key_actions(provider)
-        if rerun_needed:
-            st.rerun()
-        st.divider()
-
-
-def render_model_selection_table() -> None:
-    """
-    Render a compact table of model settings for the active provider.
-    """
-    active_provider = initialize_model_settings()
-
-    models = PROVIDER_MODELS.get(active_provider, [])
-    if not models:
-        show_warning(f"No models configured for {active_provider.capitalize()}.")
-        return
-
-    st.markdown(f"### {active_provider.capitalize()} Models")
-
-    st.radio(
-        "Provider:",
-        options=[p for p in get_available_providers() if get_api_key(p)],
-        format_func=lambda x: x.capitalize(),
-        index=0,
-        key="provider_table_selector",
-        horizontal=True,
-        on_change=lambda: st.session_state.update(
-            {"active_provider": st.session_state.provider_table_selector}
-        ),
-    )
-
-    current_settings = st.session_state.provider_settings.get(active_provider, {})
-    current_model = current_settings.get("model", models[0])
-
-    selected_model = st.selectbox(
-        "Model:",
-        options=models,
-        index=models.index(current_model) if current_model in models else 0,
-        key=f"{active_provider}_model_table_selector",
-    )
-
-    temperature = st.slider(
-        "Temperature:",
-        min_value=0.0,
-        max_value=2.0,
-        value=current_settings.get("temperature", 0.7),
-        step=0.1,
-        help="Controls randomness in responses: 0=deterministic, higher=more creative",
-    )
-
-    if active_provider in st.session_state.provider_settings:
-        st.session_state.provider_settings[active_provider].update(
-            {"model": selected_model, "temperature": temperature}
-        )
-
-    update_global_settings(active_provider, selected_model, temperature)
-
-
 def render_unified_settings_page(on_save_callback: Callable | None = None) -> None:
     """
     Render a settings page with unified model selection.
@@ -426,11 +598,8 @@ def render_unified_settings_page(on_save_callback: Callable | None = None) -> No
     """
     render_page_header("Settings", "Configure API keys and model settings for PaperChat")
 
-    with st.expander("API Keys", expanded=True):
-        render_compact_api_key_table()
-
     with st.expander("Model Selection", expanded=True):
-        render_model_selection_table()
+        render_model_table()
 
     with st.expander("Retrieval Settings", expanded=True):
         st.subheader("Document Retrieval")
@@ -453,58 +622,46 @@ def render_settings_page(on_save_callback: Callable | None = None) -> None:
     Args:
         on_save_callback: Optional callback to execute after settings are saved
     """
+    add_api_table_css()
     st.header("⚙️ Settings")
-    st.write("Configure your chat experience")
+    if st.button("Back to Chat", icon="⬅️", type="tertiary", use_container_width=False):
+        st.session_state.show_settings = False
+        st.rerun()
 
-    settings = st.session_state.settings
+    st.subheader("API Keys")
+    st.caption("Configure API keys for each provider.")
+    render_api_key_table()
 
+    st.subheader("Models")
+    st.caption("Select which model to use for generating responses.")
+    render_model_table()
+
+    st.subheader("Model & Retrieval Settings")
     with st.form("settings_form"):
-        st.subheader("Model Settings")
-        providers = list_available_providers()
-        provider = st.selectbox(
-            "LLM Provider",
-            options=providers,
-            index=providers.index(settings.get("provider", DEFAULT_PROVIDER))
-            if settings.get("provider") in providers
-            else 0,
-            help="Select which LLM provider to use",
-        )
-        provider_models = list_models(provider_name=provider)
-        model_ids = [model["id"] for model in provider_models]
-        current_model = settings.get("model", DEFAULT_MODEL)
-        model_index = 0
-        if current_model in model_ids:
-            model_index = model_ids.index(current_model)
+        active_provider = st.session_state.get("active_provider", "")
+        active_settings = st.session_state.provider_settings.get(active_provider, {})
+        active_model = active_settings.get("model", "")
 
-        model = st.selectbox(
-            "Model", options=model_ids, index=model_index, help="Select which language model to use"
-        )
+        # Get provider display name
+        provider_display = get_provider_display_name(active_provider)
+
+        st.markdown(f"**Current Model:** {provider_display} - `{active_model}`")
 
         temperature = st.slider(
             "Temperature",
             min_value=0.0,
             max_value=2.0,
-            value=settings.get("temperature", DEFAULT_TEMPERATURE),
-            step=0.05,
-            format="%.2f",
-            help="Controls randomness in the model. Lower values are more deterministic, higher values more creative.",
+            value=active_settings.get("temperature", 0.7),
+            step=0.1,
+            help="Controls randomness in responses: 0=deterministic, higher=more creative",
         )
 
-        max_tokens = st.number_input(
-            "Max response tokens",
-            min_value=100,
-            max_value=4000,
-            value=settings.get("max_tokens", DEFAULT_MAX_TOKENS),
-            step=50,
-            help="Maximum number of tokens (words/word pieces) in the model's response.",
-        )
-
-        st.subheader("Retrieval Settings")
+        st.markdown("### Retrieval Settings")
         top_k = st.slider(
-            "Number of context chunks",
+            "Number of chunks to retrieve",
             min_value=1,
             max_value=20,
-            value=settings.get("top_k", 5),
+            value=st.session_state.settings.get("top_k", 5),
             step=1,
             help="How many chunks from the document to include in the model's context.",
         )
@@ -512,19 +669,12 @@ def render_settings_page(on_save_callback: Callable | None = None) -> None:
         save_button = st.form_submit_button("Save Settings")
 
         if save_button:
-            settings["provider"] = provider
-            settings["model"] = model
-            settings["temperature"] = temperature
-            settings["max_tokens"] = max_tokens
-            settings["top_k"] = top_k
-            # update the LLM client with the new provider if it changed
-            if provider != st.session_state.get("last_provider", DEFAULT_PROVIDER):
-                from ..llms.common import get_client
+            if active_provider in st.session_state.provider_settings:
+                st.session_state.provider_settings[active_provider]["temperature"] = temperature
 
-                st.session_state.llm_client = get_client(provider_name=provider)
-                st.session_state["last_provider"] = provider
+            st.session_state.settings["top_k"] = top_k
 
-            st.success("Settings saved!")
+            if active_provider and active_model:
+                update_global_settings(active_provider, active_model, temperature)
 
-            if on_save_callback:
-                on_save_callback()
+            show_success("Settings saved!")
