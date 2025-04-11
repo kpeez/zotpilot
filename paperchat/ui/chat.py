@@ -4,9 +4,8 @@ Chat interface UI components for Streamlit.
 
 import streamlit as st
 
-from paperchat.llm import rag_pipeline
-from paperchat.ui.common import render_page_header, show_info
-from paperchat.utils.formatting import (
+from ..ui.common import render_page_header, show_info
+from ..utils.formatting import (
     format_response_with_citations,
     format_retrieved_chunks_for_display,
     process_citations,
@@ -89,18 +88,18 @@ def render_chat_interface() -> None:
                 active_doc_data = st.session_state.processed_documents[
                     st.session_state.active_document_hash
                 ]
-                settings = st.session_state.settings
+                config = st.session_state.config
+                rag_pipeline = st.session_state.rag_pipeline
 
-                llm_response, retrieved_chunks = rag_pipeline(
+                # Use top_k from config, defaulting to 5 if not present
+                top_k = config.get("top_k", 5)
+
+                # Use the RAGPipeline's run method to get response and retrieved chunks
+                llm_response, retrieved_chunks = rag_pipeline.run(
                     query=user_query,
                     document_data=active_doc_data,
-                    top_k=settings["top_k"],
-                    model=settings["model"],
-                    temperature=settings["temperature"],
-                    max_tokens=settings["max_tokens"],
+                    top_k=top_k,
                     stream=False,
-                    embedding_model=st.session_state.embedding_model,
-                    client=st.session_state.llm_client,
                 )
 
                 processed_response, cited_chunks_filtered = process_citations(
