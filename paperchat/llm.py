@@ -1,4 +1,3 @@
-from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Generator
 
@@ -6,50 +5,12 @@ from .embeddings import EmbeddingModel
 from .ingestion import process_document
 from .llms.manager import LLMManager
 from .retrieval import similarity_search
-from .utils.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_TEMPERATURE
 from .utils.formatting import format_context
-
-
-@dataclass
-class LLMConfig:
-    """Configuration class for LLM settings.
-
-    Attributes:
-        provider_name: Name of the LLM provider (default: from config.DEFAULT_PROVIDER).
-        model_id: ID of the model to use (default: from config.DEFAULT_MODEL).
-        temperature: Temperature for response generation, controlling randomness (default: from config.DEFAULT_TEMPERATURE).
-        max_tokens: Maximum number of tokens in response (default: from config.DEFAULT_MAX_TOKENS).
-    """
-
-    provider_name: str = DEFAULT_PROVIDER
-    model_id: str = DEFAULT_MODEL
-    temperature: float = DEFAULT_TEMPERATURE
-    max_tokens: int = DEFAULT_MAX_TOKENS
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert configuration to dictionary.
-
-        Returns:
-            A dictionary containing the configuration attributes.
-        """
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> "LLMConfig":
-        """Create configuration from dictionary.
-
-        Args:
-            config_dict: Dictionary containing configuration values.
-
-        Returns:
-            An instance of LLMConfig with values from the dictionary.
-        """
-        return cls(**{k: v for k, v in config_dict.items() if k in cls.__dataclass_fields__})
 
 
 class RAGPipeline:
     """
-    Orchestrates the RAG pipeline.
+    Orchestrates the Retrieval-Augmented Generation (RAG) pipeline.
 
     Handles document processing, retrieval of relevant chunks, and generation
     of responses using a configured LLM.
@@ -112,7 +73,7 @@ class RAGPipeline:
 
         Args:
             query: The user's query text.
-            retrieved_results: list of document chunks retrieved as context.
+            retrieved_results: List of document chunks retrieved as context.
             stream: Whether to stream the response.
 
         Returns:
@@ -148,5 +109,4 @@ class RAGPipeline:
         processed_data = self._ensure_document_data(document_data, pdf_path)
         retrieved_chunks = self.retrieve(query, processed_data, top_k)
         response = self.generate(query, retrieved_chunks, stream)
-
         return response, retrieved_chunks
