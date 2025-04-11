@@ -6,7 +6,7 @@ from .ingestion import process_document
 from .llms.common import generate_response, generate_streaming_response, get_client
 from .retrieval import similarity_search
 from .utils.config import DEFAULT_MAX_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_TEMPERATURE
-from .utils.formatting import format_context, format_response_with_citations
+from .utils.formatting import format_context
 
 
 def process_query(
@@ -126,7 +126,5 @@ def rag_pipeline(
         client=client,
         provider_name=provider_name,
     )
-
-    response = format_response_with_citations(response)
 
     return response, retrieved_results
