@@ -39,7 +39,11 @@ paperchat
 
 ## Settings
 
-PaperChat uses your own model API keys to connect to the AI providers. If you have API keys set as environment variables, they will be automatically detected. Otherwise, you can set them in the settings page.
+PaperChat uses your own model API keys to connect to the AI providers. If you have API keys set as environment variables, they will be automatically detected. Otherwise, you can set them in the settings page. To get API keys, you can sign up for a free account on the providers' websites:
+
+- [OpenAI](https://platform.openai.com/api-keys)
+- [Anthropic](https://console.anthropic.com/settings/keys)
+- [Gemini](https://aistudio.google.com/apikey)
 
 ## Troubleshooting
 
