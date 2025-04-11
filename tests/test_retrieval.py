@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from paperchat.retrieval import similarity_search
+from paperchat.core import similarity_search
 from paperchat.utils.formatting import format_context
 
 

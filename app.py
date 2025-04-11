@@ -2,9 +2,8 @@ import os
 
 import streamlit as st
 
-from paperchat.embeddings import EmbeddingModel
-from paperchat.llm import RAGPipeline
-from paperchat.llms.manager import LLMManager
+from paperchat.core import EmbeddingModel, RAGPipeline
+from paperchat.llms import LLMManager
 from paperchat.ui import (
     render_api_key_setup,
     render_main_content,

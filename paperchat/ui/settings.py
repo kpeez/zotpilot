@@ -398,7 +398,7 @@ def update_global_settings(provider: str, model: str, temperature: float) -> Non
             )
 
             if "rag_pipeline" in st.session_state:
-                from paperchat.llm import RAGPipeline
+                from paperchat.core import RAGPipeline
 
                 st.session_state.rag_pipeline = RAGPipeline(
                     llm_manager=st.session_state.llm_manager,

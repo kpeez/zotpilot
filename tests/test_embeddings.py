@@ -2,10 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import torch
 
-from paperchat.embeddings import (
-    EmbeddingModel,
-    embed_doc_chunks,
-)
+from paperchat.core import EmbeddingModel, embed_doc_chunks
 
 
 @patch("paperchat.embeddings.SentenceTransformer")

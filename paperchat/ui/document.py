@@ -8,7 +8,7 @@ import tempfile
 
 import streamlit as st
 
-from paperchat.ingestion import process_document
+from paperchat.core import process_document
 from paperchat.ui.common import show_info, show_warning
 from paperchat.ui.settings import (
     initialize_model_settings,

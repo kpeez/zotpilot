@@ -4,8 +4,13 @@ import pytest
 import torch
 from docling.datamodel.document import DoclingDocument
 
-from paperchat.embeddings import EmbeddingModel
-from paperchat.ingestion import chunk_document, get_pdf_chunks, parse_pdf, process_document
+from paperchat.core import (
+    EmbeddingModel,
+    chunk_document,
+    get_pdf_chunks,
+    parse_pdf,
+    process_document,
+)
 from paperchat.utils.config import EMBEDDING_MODEL
 
 # Ignore the deprecation warnings from docling
