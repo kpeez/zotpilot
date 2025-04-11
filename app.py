@@ -27,11 +27,8 @@ st.set_page_config(
 set_css_styles()
 
 
-def initialize_session() -> None:
-    """Initialize all session state variables and components in one place."""
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
+def initialize_document_state() -> None:
+    """Initialize document-related session state variables."""
     if "processed_documents" not in st.session_state:
         # stores hash -> {processed data dict from process_document()}
         st.session_state.processed_documents = {}
@@ -47,6 +44,9 @@ def initialize_session() -> None:
     if "last_processed_hash" in st.session_state:
         del st.session_state["last_processed_hash"]
 
+
+def initialize_model_state() -> None:
+    """Initialize model and settings-related session state variables."""
     if "config" not in st.session_state:
         st.session_state.config = {
             "provider_name": DEFAULT_PROVIDER,
@@ -55,6 +55,18 @@ def initialize_session() -> None:
             "max_tokens": DEFAULT_MAX_TOKENS,
             "top_k": 5,
         }
+
+    if "provider_settings" not in st.session_state:
+        provider_name = st.session_state.config.get("provider_name", DEFAULT_PROVIDER)
+        st.session_state.provider_settings = {
+            provider_name: {
+                "model": st.session_state.config.get("model_id", DEFAULT_MODEL),
+                "temperature": st.session_state.config.get("temperature", 0.7),
+            }
+        }
+
+    if "settings" not in st.session_state:
+        st.session_state.settings = {"top_k": st.session_state.config.get("top_k", 5)}
 
     if "embedding_model" not in st.session_state:
         st.session_state.embedding_model = EmbeddingModel()
@@ -69,6 +81,15 @@ def initialize_session() -> None:
             llm_manager=st.session_state.llm_manager,
             embedding_model=st.session_state.embedding_model,
         )
+
+
+def initialize_session() -> None:
+    """Initialize all session state variables and components in one place."""
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    initialize_document_state()
+    initialize_model_state()
 
     if "show_api_setup" not in st.session_state:
         st.session_state.show_api_setup = False
