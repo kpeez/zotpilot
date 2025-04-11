@@ -2,8 +2,8 @@ import os
 
 import streamlit as st
 
-from paperchat.embeddings import EmbeddingModel
-from paperchat.llms.common import get_client
+from paperchat.core import EmbeddingModel, RAGPipeline
+from paperchat.llms import LLMManager
 from paperchat.ui import (
     render_api_key_setup,
     render_main_content,
@@ -26,11 +26,8 @@ st.set_page_config(
 set_css_styles()
 
 
-def initialize_session() -> None:
-    """Initialize all session state variables and models in one place."""
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
+def initialize_document_state() -> None:
+    """Initialize document-related session state variables."""
     if "processed_documents" not in st.session_state:
         # stores hash -> {processed data dict from process_document()}
         st.session_state.processed_documents = {}
@@ -41,29 +38,58 @@ def initialize_session() -> None:
         # hash of the currently selected doc for chatting
         st.session_state.active_document_hash = None
 
-    # remove single-document state variables if they exist from previous runs
     if "document_data" in st.session_state:
         del st.session_state["document_data"]
     if "last_processed_hash" in st.session_state:
         del st.session_state["last_processed_hash"]
 
-    if "settings" not in st.session_state:
-        st.session_state.settings = {
-            "top_k": 5,
+
+def initialize_model_state() -> None:
+    """Initialize model and settings-related session state variables."""
+    if "config" not in st.session_state:
+        st.session_state.config = {
+            "provider_name": DEFAULT_PROVIDER,
+            "model_id": DEFAULT_MODEL,
             "temperature": 0.7,
             "max_tokens": DEFAULT_MAX_TOKENS,
-            "model": DEFAULT_MODEL,
-            "provider": DEFAULT_PROVIDER,
+            "top_k": 5,
         }
+
+    if "provider_settings" not in st.session_state:
+        provider_name = st.session_state.config.get("provider_name", DEFAULT_PROVIDER)
+        st.session_state.provider_settings = {
+            provider_name: {
+                "model": st.session_state.config.get("model_id", DEFAULT_MODEL),
+                "temperature": st.session_state.config.get("temperature", 0.7),
+            }
+        }
+
+    if "settings" not in st.session_state:
+        st.session_state.settings = {"top_k": st.session_state.config.get("top_k", 5)}
 
     if "embedding_model" not in st.session_state:
         st.session_state.embedding_model = EmbeddingModel()
 
-    if "llm_client" not in st.session_state:
-        provider = st.session_state.settings.get("provider", DEFAULT_PROVIDER)
-        st.session_state.llm_client = get_client(provider_name=provider)
+    if "llm_manager" not in st.session_state:
+        provider_name = st.session_state.config.get("provider_name", DEFAULT_PROVIDER)
+        api_key = get_api_key(provider_name)
+        st.session_state.llm_manager = LLMManager(config=st.session_state.config, api_key=api_key)
 
-    # UI state management
+    if "rag_pipeline" not in st.session_state:
+        st.session_state.rag_pipeline = RAGPipeline(
+            llm_manager=st.session_state.llm_manager,
+            embedding_model=st.session_state.embedding_model,
+        )
+
+
+def initialize_session() -> None:
+    """Initialize all session state variables and components in one place."""
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    initialize_document_state()
+    initialize_model_state()
+
     if "show_api_setup" not in st.session_state:
         st.session_state.show_api_setup = False
     if "show_settings" not in st.session_state:
@@ -74,9 +100,8 @@ def main() -> None:
     """Main entry point for the Streamlit app."""
     initialize_session()
 
-    # Check if the api key for the selected provider exists
-    provider = st.session_state.settings.get("provider", DEFAULT_PROVIDER)
-    provider_key = get_api_key(provider)
+    provider_name = st.session_state.config.get("provider_name", DEFAULT_PROVIDER)
+    provider_key = get_api_key(provider_name)
 
     if not provider_key or st.session_state.show_api_setup:
         render_api_key_setup()

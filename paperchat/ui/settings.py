@@ -131,7 +131,6 @@ def render_model_table() -> None:
     if active_provider in st.session_state.get("provider_settings", {}):
         active_model = st.session_state.provider_settings[active_provider].get("model", "")
 
-    # Create a simple table with 3 columns
     col1, col2, col3 = st.columns([2, 3, 2])
     with col1:
         st.markdown("**Provider**")
@@ -371,14 +370,40 @@ def update_global_settings(provider: str, model: str, temperature: float) -> Non
         model: Selected model ID
         temperature: Selected temperature value
     """
-    if "settings" in st.session_state:
-        st.session_state.settings.update(
+    if "config" not in st.session_state:
+        st.session_state.config = {
+            "provider_name": provider,
+            "model_id": model,
+            "temperature": temperature,
+            "max_tokens": 1000,
+            "top_k": 5,
+        }
+    else:
+        current_provider = st.session_state.config.get("provider_name")
+        st.session_state.config.update(
             {
-                "model": model,
+                "model_id": model,
                 "temperature": temperature,
-                "provider": provider,
+                "provider_name": provider,
             }
         )
+
+        if current_provider != provider and "llm_manager" in st.session_state:
+            from paperchat.llms.manager import LLMManager
+            from paperchat.utils.api_keys import get_api_key
+
+            api_key = get_api_key(provider)
+            st.session_state.llm_manager = LLMManager(
+                config=st.session_state.config, api_key=api_key
+            )
+
+            if "rag_pipeline" in st.session_state:
+                from paperchat.core import RAGPipeline
+
+                st.session_state.rag_pipeline = RAGPipeline(
+                    llm_manager=st.session_state.llm_manager,
+                    embedding_model=st.session_state.embedding_model,
+                )
 
 
 def render_unified_model_settings() -> None:
@@ -458,31 +483,48 @@ def initialize_model_settings() -> str:
     Returns:
         The active provider ID
     """
+    from paperchat.llms.common import list_models
+    from paperchat.llms.manager import LLMManager
+    from paperchat.utils.api_keys import get_api_key, get_available_providers
+    from paperchat.utils.config import (
+        DEFAULT_MAX_TOKENS,
+        DEFAULT_MODEL,
+        DEFAULT_PROVIDER,
+        DEFAULT_TEMPERATURE,
+    )
 
-    if "provider_settings" not in st.session_state:
-        st.session_state.provider_settings = {}
+    if "config" not in st.session_state:
+        st.session_state.config = {
+            "provider_name": DEFAULT_PROVIDER,
+            "model_id": DEFAULT_MODEL,
+            "temperature": DEFAULT_TEMPERATURE,
+            "max_tokens": DEFAULT_MAX_TOKENS,
+            "top_k": 5,
+        }
 
-    if "active_provider" not in st.session_state:
-        providers = get_available_providers()
+    providers = get_available_providers()
+    active_provider = st.session_state.config.get("provider_name", "")
 
+    if not active_provider or active_provider not in providers:
         for provider in providers:
             if get_api_key(provider):
-                st.session_state.active_provider = provider
+                active_provider = provider
+                st.session_state.config["provider_name"] = provider
                 break
 
-        if "active_provider" not in st.session_state:
-            st.session_state.active_provider = providers[0] if providers else "openai"
+        if not active_provider and providers:
+            active_provider = providers[0]
+            st.session_state.config["provider_name"] = active_provider
 
-    active_provider = st.session_state.active_provider
-
-    if active_provider not in st.session_state.provider_settings:
+    if not st.session_state.config.get("model_id"):
         models = list_models(provider_name=active_provider)
         model_ids = [model["id"] for model in models]
+        if model_ids:
+            st.session_state.config["model_id"] = model_ids[0]
 
-        st.session_state.provider_settings[active_provider] = {
-            "model": model_ids[0] if model_ids else "",
-            "temperature": 0.7,
-        }
+    if "llm_manager" not in st.session_state:
+        api_key = get_api_key(active_provider)
+        st.session_state.llm_manager = LLMManager(config=st.session_state.config, api_key=api_key)
 
     return active_provider
 
@@ -642,7 +684,6 @@ def render_settings_page(on_save_callback: Callable | None = None) -> None:
         active_settings = st.session_state.provider_settings.get(active_provider, {})
         active_model = active_settings.get("model", "")
 
-        # Get provider display name
         provider_display = get_provider_display_name(active_provider)
 
         st.markdown(f"**Current Model:** {provider_display} - `{active_model}`")
