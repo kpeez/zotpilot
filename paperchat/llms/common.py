@@ -6,6 +6,7 @@ from typing import Any, Generator, Protocol, Type, runtime_checkable
 
 from ..utils.config import DEFAULT_PROVIDER
 from .anthropic import AnthropicAdapter
+from .gemini import GeminiAdapter
 from .openai import OpenAIAdapter
 
 
@@ -57,6 +58,7 @@ class LLMProvider(Protocol):
 PROVIDERS: dict[str, Type[LLMProvider]] = {
     "openai": OpenAIAdapter,
     "anthropic": AnthropicAdapter,
+    "gemini": GeminiAdapter,
 }
 
 

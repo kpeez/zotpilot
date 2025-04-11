@@ -161,7 +161,6 @@ def render_api_keys_section(on_save_callback: Optional[Callable] = None) -> None
     for provider in get_available_providers():
         with st.expander(get_provider_display_name(provider), expanded=True):
             render_api_key_section(provider, on_save_callback)
-            # Add helper text for obtaining keys
             if provider == "openai":
                 st.caption(
                     "Get an OpenAI API key from [OpenAI API Keys](https://platform.openai.com/api-keys)"
@@ -170,9 +169,9 @@ def render_api_keys_section(on_save_callback: Optional[Callable] = None) -> None
                 st.caption(
                     "Get an Anthropic API key from [Anthropic Console](https://console.anthropic.com/)"
                 )
-            elif provider == "azure":
+            elif provider == "gemini":
                 st.caption(
-                    "Configure Azure OpenAI in the [Azure Portal](https://portal.azure.com/)"
+                    "Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey)"
                 )
 
         st.divider()
