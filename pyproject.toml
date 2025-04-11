@@ -15,14 +15,14 @@ classifiers = [
 requires-python = ">=3.12"
 dependencies = [
     "docling>=2.25",
-    "sentence-transformers>=3.4.1",
-    "openai>=1.61.1",
-    "torch>=2.6.0",
-    "pydantic>=2.10.6",
     "streamlit>=1.42.0",
     "keyring>=25.6.0",
+    "sentence-transformers>=3.4.1",
+    "torch>=2.6.0",
+    "openai>=1.61.1",
     "anthropic>=0.49.0",
     "google-genai>=1.10.0",
+    "chromadb>=1.0.4",
 ]
 
 [dependency-groups]
