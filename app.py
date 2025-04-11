@@ -3,7 +3,8 @@ import os
 import streamlit as st
 
 from paperchat.embeddings import EmbeddingModel
-from paperchat.llms.common import get_client
+from paperchat.llm import RAGPipeline
+from paperchat.llms.manager import LLMManager
 from paperchat.ui import (
     render_api_key_setup,
     render_main_content,
@@ -27,7 +28,7 @@ set_css_styles()
 
 
 def initialize_session() -> None:
-    """Initialize all session state variables and models in one place."""
+    """Initialize all session state variables and components in one place."""
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
@@ -41,29 +42,34 @@ def initialize_session() -> None:
         # hash of the currently selected doc for chatting
         st.session_state.active_document_hash = None
 
-    # remove single-document state variables if they exist from previous runs
     if "document_data" in st.session_state:
         del st.session_state["document_data"]
     if "last_processed_hash" in st.session_state:
         del st.session_state["last_processed_hash"]
 
-    if "settings" not in st.session_state:
-        st.session_state.settings = {
-            "top_k": 5,
+    if "config" not in st.session_state:
+        st.session_state.config = {
+            "provider_name": DEFAULT_PROVIDER,
+            "model_id": DEFAULT_MODEL,
             "temperature": 0.7,
             "max_tokens": DEFAULT_MAX_TOKENS,
-            "model": DEFAULT_MODEL,
-            "provider": DEFAULT_PROVIDER,
+            "top_k": 5,
         }
 
     if "embedding_model" not in st.session_state:
         st.session_state.embedding_model = EmbeddingModel()
 
-    if "llm_client" not in st.session_state:
-        provider = st.session_state.settings.get("provider", DEFAULT_PROVIDER)
-        st.session_state.llm_client = get_client(provider_name=provider)
+    if "llm_manager" not in st.session_state:
+        provider_name = st.session_state.config.get("provider_name", DEFAULT_PROVIDER)
+        api_key = get_api_key(provider_name)
+        st.session_state.llm_manager = LLMManager(config=st.session_state.config, api_key=api_key)
 
-    # UI state management
+    if "rag_pipeline" not in st.session_state:
+        st.session_state.rag_pipeline = RAGPipeline(
+            llm_manager=st.session_state.llm_manager,
+            embedding_model=st.session_state.embedding_model,
+        )
+
     if "show_api_setup" not in st.session_state:
         st.session_state.show_api_setup = False
     if "show_settings" not in st.session_state:
@@ -74,9 +80,8 @@ def main() -> None:
     """Main entry point for the Streamlit app."""
     initialize_session()
 
-    # Check if the api key for the selected provider exists
-    provider = st.session_state.settings.get("provider", DEFAULT_PROVIDER)
-    provider_key = get_api_key(provider)
+    provider_name = st.session_state.config.get("provider_name", DEFAULT_PROVIDER)
+    provider_key = get_api_key(provider_name)
 
     if not provider_key or st.session_state.show_api_setup:
         render_api_key_setup()
