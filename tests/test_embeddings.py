@@ -5,9 +5,9 @@ import torch
 from paperchat.core import EmbeddingModel, embed_doc_chunks
 
 
-@patch("paperchat.embeddings.SentenceTransformer")
-@patch("paperchat.embeddings.AutoTokenizer")
-@patch("paperchat.embeddings.get_device", return_value="cpu")
+@patch("paperchat.core.embeddings.SentenceTransformer")
+@patch("paperchat.core.embeddings.AutoTokenizer")
+@patch("paperchat.core.embeddings.get_device", return_value="cpu")
 def test_embedding_model(mock_get_device, mock_tokenizer_cls, mock_sentence_transformer_cls):
     """Test basic functionality of EmbeddingModel"""
     # Setup mocks
@@ -26,9 +26,9 @@ def test_embedding_model(mock_get_device, mock_tokenizer_cls, mock_sentence_tran
     assert result.shape[0] == len(texts)  # one embedding per text
 
 
-@patch("paperchat.embeddings.SentenceTransformer")
-@patch("paperchat.embeddings.AutoTokenizer")
-@patch("paperchat.embeddings.get_device", return_value="cpu")
+@patch("paperchat.core.embeddings.SentenceTransformer")
+@patch("paperchat.core.embeddings.AutoTokenizer")
+@patch("paperchat.core.embeddings.get_device", return_value="cpu")
 def test_embedding_model_string_vs_list(
     mock_get_device, mock_tokenizer_cls, mock_sentence_transformer_cls
 ):

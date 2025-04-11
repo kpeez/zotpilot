@@ -74,7 +74,8 @@ def test_get_pdf_chunks():
 
 def test_process_document_returns_expected_structure():
     """Test that process_document returns a dictionary with the expected structure"""
-    result = process_document(TEST_PDF_PATH, model_id=TEST_MODEL_ID)
+    model = EmbeddingModel(model_id=TEST_MODEL_ID)
+    result = process_document(TEST_PDF_PATH, embedding_model=model)
 
     assert isinstance(result, dict)
     assert "collection_name" in result
@@ -98,7 +99,8 @@ def test_process_document_returns_expected_structure():
 
 def test_process_document_consistency():
     """Test that process_document produces consistent results between texts and embeddings"""
-    result = process_document(TEST_PDF_PATH, model_id=TEST_MODEL_ID)
+    model = EmbeddingModel(model_id=TEST_MODEL_ID)
+    result = process_document(TEST_PDF_PATH, embedding_model=model)
     assert len(result["chunk_texts"]) == result["chunk_embeddings"].shape[0]
     assert len(result["chunk_metadata"]) == len(result["chunk_texts"])
     chunk_ids = [meta["chunk_id"] for meta in result["chunk_metadata"]]
