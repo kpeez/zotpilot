@@ -1,7 +1,7 @@
-from typing import Any, Generator, Type
+from typing import Any, Generator
 
 from ..llm import LLMConfig
-from .common import LLMProvider, get_provider
+from .common import get_provider
 
 
 class LLMManager:
@@ -22,16 +22,12 @@ class LLMManager:
 
     def _create_client(self) -> Any:
         """Create a new client for the configured provider."""
-        provider = self._get_provider()
+        provider = get_provider(self.config.provider_name)
         return provider.get_client(self._api_key)
-
-    def _get_provider(self) -> Type[LLMProvider]:
-        """Get the provider class for the configured provider name."""
-        return get_provider(self.config.provider_name)
 
     def generate_response(self, query: str, context: str) -> str:
         """Generate a response from the LLM."""
-        provider = self._get_provider()
+        provider = get_provider(self.config.provider_name)
         return provider.generate_response(
             query=query,
             context=context,
@@ -43,7 +39,7 @@ class LLMManager:
 
     def generate_streaming_response(self, query: str, context: str) -> Generator[str, None, None]:
         """Generate a streaming response from the LLM."""
-        provider = self._get_provider()
+        provider = get_provider(self.config.provider_name)
         yield from provider.generate_streaming_response(
             query=query,
             context=context,
@@ -55,10 +51,12 @@ class LLMManager:
 
     def update_config(self, **kwargs) -> None:
         """Update the configuration with new values."""
+        provider_changed = "provider_name" in kwargs
+
         for key, value in kwargs.items():
             if hasattr(self.config, key):
                 setattr(self.config, key, value)
 
         # reset client if the provider changes
-        if "provider_name" in kwargs:
+        if provider_changed:
             self._client = None
