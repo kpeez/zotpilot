@@ -4,6 +4,7 @@ This module provides a unified interface for storing and retrieving
 document chunks and their embeddings using ChromaDB as the backend.
 """
 
+import datetime
 import os
 from pathlib import Path
 from typing import Any
@@ -13,8 +14,14 @@ import numpy as np
 import torch
 from chromadb.config import Settings
 
+from paperchat.utils.logging import get_component_logger
+
+logger = get_component_logger("vector_store")
+
 DEFAULT_SIMILARITY_TOP_K = 5
 DEFAULT_SIMILARITY_THRESHOLD = 0.7
+VECTOR_DB_DIR = str(Path.home() / ".paperchat" / "vectordb")
+DOCUMENT_REGISTRY = "document_registry"
 
 
 class VectorStore:
@@ -33,10 +40,12 @@ class VectorStore:
             create_directory: Whether to create the persistence directory if it
                 doesn't exist.
         """
-        self.persist_directory = persist_directory or str(Path.home() / ".paperchat" / "vectordb")
+        self.persist_directory = persist_directory or VECTOR_DB_DIR
+        logger.info(f"Initializing VectorStore with directory: {self.persist_directory}")
 
         if create_directory:
             os.makedirs(self.persist_directory, exist_ok=True)
+            logger.debug(f"Created vector store directory: {self.persist_directory}")
 
         self.client = chromadb.PersistentClient(
             path=self.persist_directory,
@@ -45,6 +54,7 @@ class VectorStore:
                 allow_reset=True,
             ),
         )
+        logger.debug(f"ChromaDB client initialized with path: {self.persist_directory}")
 
     def list_collections(self) -> list[str]:
         """List all available collections in the database.
@@ -53,7 +63,9 @@ class VectorStore:
             List of collection names
         """
         collections = self.client.list_collections()
-        return [collection.name for collection in collections]
+        collection_names = [collection.name for collection in collections]
+        logger.debug(f"Found collections: {collection_names}")
+        return collection_names
 
     def create_collection(self, collection_name: str) -> chromadb.Collection:
         """Create a new collection or get existing one with the given name.
@@ -64,6 +76,7 @@ class VectorStore:
         Returns:
             ChromaDB collection object
         """
+        logger.debug(f"Creating/getting collection: {collection_name}")
         return self.client.get_or_create_collection(name=collection_name)
 
     def delete_collection(self, collection_name: str) -> None:
@@ -72,6 +85,7 @@ class VectorStore:
         Args:
             collection_name: Name of the collection to delete
         """
+        logger.info(f"Deleting collection: {collection_name}")
         self.client.delete_collection(name=collection_name)
 
     def add_document(
@@ -91,6 +105,7 @@ class VectorStore:
             chunk_metadata: List of metadata dictionaries for each chunk
             ids: Optional list of IDs for each chunk. If None, generated automatically.
         """
+        logger.info(f"Adding document to collection '{collection_name}': {len(chunk_texts)} chunks")
         collection = self.create_collection(collection_name)
 
         if isinstance(chunk_embeddings, torch.Tensor):
@@ -101,12 +116,138 @@ class VectorStore:
         if ids is None:
             ids = [f"{collection_name}_{i}" for i in range(len(chunk_texts))]
 
+        # Log metadata structure at debug level
+        if chunk_metadata and chunk_metadata[0]:
+            logger.debug(f"Metadata structure (first item): {list(chunk_metadata[0].keys())}")
+
+        # Verify we don't have list values in metadata which ChromaDB doesn't support
+        for i, metadata in enumerate(chunk_metadata):
+            for key, value in list(metadata.items()):
+                if isinstance(value, list):
+                    logger.debug(f"Converting list to string in metadata[{i}][{key}]")
+                    chunk_metadata[i][key] = ", ".join(map(str, value)) if value else ""
+
         collection.add(
             documents=chunk_texts,
             embeddings=embeddings,
             metadatas=chunk_metadata,
             ids=ids,
         )
+        logger.info(f"Successfully added document to collection '{collection_name}'")
+
+    def register_document(
+        self,
+        document_hash: str,
+        original_filename: str,
+        collection_name: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Register a document in the document registry.
+
+        This stores metadata about documents without duplicating the files.
+
+        Args:
+            document_hash: Hash of the document content
+            original_filename: Original filename
+            collection_name: Name of the collection where chunks are stored
+            metadata: Additional metadata to store with the document
+        """
+        # Create a document registry collection if it doesn't exist
+        registry = self.create_collection(DOCUMENT_REGISTRY)
+
+        # Create metadata for the document
+        doc_metadata = {
+            "original_filename": original_filename,
+            "collection_name": collection_name,
+            "registered_at": datetime.datetime.now().isoformat(),
+        }
+
+        # Add any additional metadata
+        if metadata:
+            doc_metadata.update(metadata)
+
+        # Store in the registry - using document_hash as the ID
+        registry.upsert(
+            ids=[document_hash],
+            documents=[f"Document: {original_filename}"],
+            metadatas=[doc_metadata],
+        )
+        logger.info(f"Registered document: {original_filename} (hash: {document_hash})")
+
+    def get_document_info(self, document_hash: str) -> tuple[bool, dict[str, Any]]:
+        """Get information about a registered document.
+
+        Args:
+            document_hash: Hash of the document content
+
+        Returns:
+            Tuple of (exists, metadata)
+        """
+        try:
+            if DOCUMENT_REGISTRY not in self.list_collections():
+                return False, {}
+
+            registry = self.client.get_collection(DOCUMENT_REGISTRY)
+            result = registry.get(ids=[document_hash])
+
+            if result and result["ids"]:
+                return True, result["metadatas"][0]
+            return False, {}
+        except Exception as e:
+            logger.warning(f"Error getting document info: {e}")
+            return False, {}
+
+    def list_registered_documents(self) -> list[dict[str, Any]]:
+        """List all registered documents.
+
+        Returns:
+            List of document metadata dictionaries
+        """
+        try:
+            if DOCUMENT_REGISTRY not in self.list_collections():
+                return []
+
+            registry = self.client.get_collection(DOCUMENT_REGISTRY)
+            result = registry.get()
+
+            documents = []
+            for i, doc_id in enumerate(result["ids"]):
+                doc_info = {"document_hash": doc_id, **result["metadatas"][i]}
+                documents.append(doc_info)
+
+            return documents
+        except Exception as e:
+            logger.warning(f"Error listing documents: {e}")
+            return []
+
+    def unregister_document(self, document_hash: str) -> bool:
+        """Remove a document from the registry.
+
+        This doesn't remove the actual collection with chunks.
+
+        Args:
+            document_hash: Hash of the document to unregister
+
+        Returns:
+            True if document was found and unregistered, False otherwise
+        """
+        try:
+            if DOCUMENT_REGISTRY not in self.list_collections():
+                return False
+
+            exists, metadata = self.get_document_info(document_hash)
+            if not exists:
+                return False
+
+            registry = self.client.get_collection(DOCUMENT_REGISTRY)
+            registry.delete(ids=[document_hash])
+            logger.info(
+                f"Unregistered document: {metadata.get('original_filename', document_hash)}"
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Error unregistering document: {e}")
+            return False
 
     def update_embeddings(
         self,
@@ -123,6 +264,9 @@ class VectorStore:
             ids: List of document IDs to update
             embeddings: New embeddings to assign to the documents
         """
+        logger.info(
+            f"Updating embeddings for {len(ids)} documents in collection '{collection_name}'"
+        )
         collection = self.client.get_collection(name=collection_name)
 
         if isinstance(embeddings, torch.Tensor):
@@ -152,17 +296,24 @@ class VectorStore:
                 (must have an embed_text method)
             batch_size: Batch size for embedding generation
         """
+        logger.info(f"Re-embedding collection '{collection_name}'")
         collection = self.client.get_collection(name=collection_name)
 
         result = collection.get()
 
         if not result["ids"]:
+            logger.warning(f"Collection '{collection_name}' is empty, nothing to re-embed")
             return
+
+        logger.info(f"Found {len(result['ids'])} documents to re-embed")
 
         for i in range(0, len(result["ids"]), batch_size):
             batch_ids = result["ids"][i : i + batch_size]
             batch_texts = result["documents"][i : i + batch_size]
 
+            logger.debug(
+                f"Re-embedding batch {i // batch_size + 1}/{(len(result['ids']) - 1) // batch_size + 1}"
+            )
             new_embeddings = embedding_model.embed_text(batch_texts)
 
             self.update_embeddings(
@@ -170,6 +321,8 @@ class VectorStore:
                 ids=batch_ids,
                 embeddings=new_embeddings,
             )
+
+        logger.info(f"Re-embedding of collection '{collection_name}' complete")
 
     def get_document_texts(self, collection_name: str) -> dict[str, Any]:
         """Get all documents and their metadata from a collection.
@@ -183,8 +336,10 @@ class VectorStore:
         Returns:
             Dictionary with document IDs, texts, and metadata
         """
+        logger.info(f"Getting document texts from collection '{collection_name}'")
         collection = self.client.get_collection(name=collection_name)
         result = collection.get()
+        logger.info(f"Retrieved {len(result['ids'])} documents from collection '{collection_name}'")
 
         return {
             "ids": result["ids"],
@@ -213,6 +368,7 @@ class VectorStore:
         Returns:
             Dictionary with search results
         """
+        logger.debug(f"Searching collections with top_k={top_k}, threshold={threshold}")
         if isinstance(query_embedding, torch.Tensor):
             query_embedding = query_embedding.cpu().numpy()
 
@@ -222,6 +378,11 @@ class VectorStore:
         if collection_names is None:
             collection_names = self.list_collections()
 
+        # Filter out the document registry from search collections
+        if DOCUMENT_REGISTRY in collection_names:
+            collection_names.remove(DOCUMENT_REGISTRY)
+
+        logger.debug(f"Searching in collections: {collection_names}")
         results = {}
 
         for name in collection_names:
@@ -247,11 +408,14 @@ class VectorStore:
                     "distances": [query_results["distances"][0][i] for i in filtered_indices],
                     "ids": [query_results["ids"][0][i] for i in filtered_indices],
                 }
+                logger.debug(f"Found {len(filtered_indices)} results in collection '{name}'")
 
             except ValueError:
                 # Collection doesn't exist, skip
+                logger.warning(f"Collection '{name}' not found, skipping")
                 continue
 
+        logger.info(f"Search completed across {len(collection_names)} collections")
         return results
 
     def get_collection_info(self, collection_name: str) -> dict[str, Any]:
@@ -263,8 +427,11 @@ class VectorStore:
         Returns:
             Dictionary with collection information
         """
+        logger.debug(f"Getting info for collection '{collection_name}'")
         collection = self.client.get_collection(name=collection_name)
+        count = collection.count()
+        logger.debug(f"Collection '{collection_name}' has {count} items")
         return {
             "name": collection_name,
-            "count": collection.count(),
+            "count": count,
         }
