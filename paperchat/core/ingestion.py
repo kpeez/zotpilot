@@ -1,3 +1,4 @@
+import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -7,6 +8,7 @@ from docling.document_converter import DocumentConverter
 from transformers import AutoTokenizer
 
 from .embeddings import EmbeddingModel, embed_doc_chunks
+from .vector_store import VectorStore
 
 
 def parse_pdf(pdf_path: str | Path) -> DoclingDocument:
@@ -77,24 +79,29 @@ def get_pdf_chunks(
 def process_document(
     pdf_path: str | Path,
     embedding_model: EmbeddingModel,
+    vector_store: VectorStore | None = None,
+    collection_name: str | None = None,
 ) -> dict[str, Any]:
     """Process a document to generate text and embeddings using a provided model.
 
-    This function handles the full pipeline from raw PDF to text and embeddings.
+    This function handles the full pipeline from raw PDF to text and embeddings
+    and stores the results in the vector database.
 
     Args:
         pdf_path: Path to the PDF file
         embedding_model: EmbeddingModel instance to use for tokenization and embeddings
+        vector_store: VectorStore instance to use for storage. If None, creates a new instance.
+        collection_name: Optional custom name for the collection. If None, uses PDF stem.
 
     Returns:
         Dictionary containing:
-        - collection_name: Name derived from the PDF filename
+        - collection_name: Name used for the collection
         - chunk_texts: List of chunk texts
         - chunk_metadata: List of chunk metadata
         - chunk_embeddings: Tensor of chunk embeddings
     """
-    collection_name = Path(pdf_path).stem
-
+    pdf_path = Path(pdf_path)
+    collection_name = collection_name or pdf_path.stem
     chunks = get_pdf_chunks(pdf_path, model=embedding_model)
     chunk_texts, chunk_embeddings = embed_doc_chunks(chunks, model=embedding_model)
     chunk_metadata = [
@@ -103,10 +110,22 @@ def process_document(
             if chunk.meta.doc_items and chunk.meta.doc_items[0].prov
             else 0,
             "chunk_id": i,
-            "headings": chunk.meta.headings,
+            "headings": ", ".join(chunk.meta.headings) if chunk.meta.headings else "",
+            "source_file": str(pdf_path),
+            "timestamp": datetime.datetime.now().isoformat(),
         }
         for i, chunk in enumerate(chunks)
     ]
+
+    if vector_store is None:
+        vector_store = VectorStore()
+
+    vector_store.add_document(
+        collection_name=collection_name,
+        chunk_texts=chunk_texts,
+        chunk_embeddings=chunk_embeddings,
+        chunk_metadata=chunk_metadata,
+    )
 
     return {
         "collection_name": collection_name,

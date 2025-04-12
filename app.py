@@ -2,7 +2,7 @@ import os
 
 import streamlit as st
 
-from paperchat.core import EmbeddingModel
+from paperchat.core import EmbeddingModel, VectorStore
 from paperchat.ui import (
     check_model_config_changes,
     refresh_model_state,
@@ -38,6 +38,9 @@ def initialize_document_state() -> None:
     if "active_document_hash" not in st.session_state:
         # hash of the currently selected doc for chatting
         st.session_state.active_document_hash = None
+    if "document_sources" not in st.session_state:
+        # stores hash -> source info ("vector_store" or "session")
+        st.session_state.document_sources = {}
 
     if "document_data" in st.session_state:
         del st.session_state["document_data"]
@@ -70,6 +73,9 @@ def initialize_model_state() -> None:
 
     if "embedding_model" not in st.session_state:
         st.session_state.embedding_model = EmbeddingModel()
+
+    if "vector_store" not in st.session_state:
+        st.session_state.vector_store = VectorStore()
 
     if "llm_manager" not in st.session_state or "rag_pipeline" not in st.session_state:
         refresh_model_state()

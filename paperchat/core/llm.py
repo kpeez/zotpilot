@@ -40,6 +40,7 @@ class RAGPipeline:
             return document_data
         if pdf_path:
             return process_document(pdf_path, embedding_model=self.embedding_model)
+
         raise ValueError("Either document_data or pdf_path must be provided")
 
     def retrieve(
@@ -57,6 +58,7 @@ class RAGPipeline:
             A list of retrieved document chunk dictionaries with metadata.
         """
         query_embedding = self.embedding_model.embed_text([query])[0]
+
         return similarity_search(
             query_embedding=query_embedding,
             chunk_texts=document_data["chunk_texts"],
@@ -80,6 +82,7 @@ class RAGPipeline:
             The generated response (str or Generator).
         """
         context = format_context(retrieved_results, include_metadata=True)
+
         if stream:
             return self.llm_manager.generate_streaming_response(query, context)
         else:
@@ -109,4 +112,5 @@ class RAGPipeline:
         processed_data = self._ensure_document_data(document_data, pdf_path)
         retrieved_chunks = self.retrieve(query, processed_data, top_k)
         response = self.generate(query, retrieved_chunks, stream)
+
         return response, retrieved_chunks

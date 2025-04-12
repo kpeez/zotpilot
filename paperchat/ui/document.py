@@ -3,8 +3,11 @@ Document handling UI components for Streamlit.
 """
 
 import hashlib
+import logging
 import os
+import re
 import tempfile
+from pathlib import Path
 
 import streamlit as st
 
@@ -14,6 +17,37 @@ from paperchat.ui.settings import (
     initialize_model_settings,
     update_global_settings,
 )
+
+logger = logging.getLogger("document_ui")
+
+
+def sanitize_collection_name(name: str) -> str:
+    """Sanitize a name to be used as a ChromaDB collection name.
+
+    Args:
+        name: Original name
+
+    Returns:
+        Sanitized name that conforms to ChromaDB collection naming rules:
+        - Contains only characters from [a-zA-Z0-9._-]
+        - Starts and ends with alphanumeric character
+        - Between 3-63 characters
+    """
+    sanitized = re.sub(r"[^a-zA-Z0-9._-]", "_", name)
+
+    if not sanitized[0].isalnum():
+        sanitized = "c" + sanitized
+
+    if not sanitized[-1].isalnum():
+        sanitized = sanitized + "0"
+
+    if len(sanitized) > 63:
+        sanitized = sanitized[:60] + sanitized[-3:]
+
+    while len(sanitized) < 3:
+        sanitized += "0"
+
+    return sanitized
 
 
 def render_compact_settings_ui() -> None:
@@ -98,6 +132,46 @@ def render_compact_settings_ui() -> None:
     st.session_state.config["top_k"] = top_k
 
 
+def check_vector_store_for_document(content_hash: str, original_filename: str) -> bool:
+    """Check if a document exists in the vector store.
+
+    Args:
+        content_hash: Hash of the document
+        original_filename: Original filename
+
+    Returns:
+        True if document was found in vector store, False otherwise
+    """
+    vector_store = st.session_state.vector_store
+
+    exists, doc_info = vector_store.get_document_info(content_hash)
+
+    if exists:
+        collection_name = doc_info["collection_name"]
+        logger.debug(f"Found document in registry: {original_filename} -> {collection_name}")
+
+        collections = vector_store.list_collections()
+
+        if collection_name in collections:
+            info = vector_store.get_collection_info(collection_name)
+
+            if info["count"] > 0:
+                doc_data = vector_store.get_document_texts(collection_name)
+
+                st.session_state.processed_documents[content_hash] = {
+                    "collection_name": collection_name,
+                    "chunk_texts": doc_data["documents"],
+                    "chunk_metadata": doc_data["metadatas"],
+                }
+
+                st.session_state.filenames[content_hash] = original_filename
+                st.session_state.document_sources[content_hash] = "vector_store"
+
+                return True
+
+    return False
+
+
 def render_upload_section() -> None:
     """Render document upload section in the sidebar."""
     st.markdown("Upload a PDF to start chatting with its content.")
@@ -112,7 +186,13 @@ def render_upload_section() -> None:
         content_hash = hashlib.md5(file_content).hexdigest()
 
         if content_hash in st.session_state.processed_documents:
-            st.success(f"Document already processed: {original_filename}")
+            st.success(f"Document already in session: {original_filename}")
+            if st.session_state.active_document_hash != content_hash:
+                st.session_state.active_document_hash = content_hash
+                st.session_state.messages = []
+                st.rerun()
+        elif check_vector_store_for_document(content_hash, original_filename):
+            st.success(f"Document loaded from vector store: {original_filename}")
             if st.session_state.active_document_hash != content_hash:
                 st.session_state.active_document_hash = content_hash
                 st.session_state.messages = []
@@ -126,23 +206,37 @@ def render_upload_section() -> None:
                     tmp_file.write(file_content)
                     pdf_path = tmp_file.name
 
-                progress_bar.progress(10, "Preparing document...")
                 progress_bar.progress(20, "Parsing PDF document...")
                 progress_bar.progress(40, "Extracting text content...")
 
+                original_stem = Path(original_filename).stem
+                collection_name = sanitize_collection_name(original_stem)
+
                 document_data = process_document(
-                    pdf_path, embedding_model=st.session_state.embedding_model
+                    pdf_path,
+                    embedding_model=st.session_state.embedding_model,
+                    vector_store=st.session_state.vector_store,
+                    collection_name=collection_name,
                 )
+
                 progress_bar.progress(70, "Creating embeddings...")
-                progress_bar.progress(90, "Finalizing...")
+                progress_bar.progress(90, "Registering document...")
+
+                st.session_state.vector_store.register_document(
+                    document_hash=content_hash,
+                    original_filename=original_filename,
+                    collection_name=collection_name,
+                )
 
                 st.session_state.processed_documents[content_hash] = document_data
                 st.session_state.filenames[content_hash] = original_filename
                 st.session_state.active_document_hash = content_hash
+                st.session_state.document_sources[content_hash] = "vector_store"
+
                 os.unlink(pdf_path)
 
                 progress_bar.progress(100, "Complete!")
-                st.success(f"Document processed: {original_filename}")
+                st.success(f"Document processed and stored: {original_filename}")
                 st.session_state.messages = []
                 st.rerun()
             except Exception as e:
@@ -181,7 +275,14 @@ def render_document_list() -> None:
     active_doc_data = st.session_state.processed_documents[st.session_state.active_document_hash]
     num_chunks = len(active_doc_data.get("chunk_texts", []))
 
-    st.markdown(f"**Active:** {selected_filename}")
+    source = st.session_state.document_sources.get(st.session_state.active_document_hash, "session")
+    source_icon = "💾" if source == "vector_store" else "🔄"
+    source_label = (
+        "Loaded from vector store" if source == "vector_store" else "From current session"
+    )
+
+    st.markdown(f"**Active:** {selected_filename} {source_icon}")
+    st.markdown(f"**Source:** {source_label}")
     st.markdown(f"**Total Chunks:** {num_chunks}")
 
     show_chunks = st.checkbox("Show document chunks preview", value=False)
@@ -280,6 +381,89 @@ def render_advanced_settings(selected_provider: str, selected_model_id: str) -> 
         if "config" in st.session_state:
             st.session_state.config["top_k"] = top_k
 
+        st.markdown("**Vector Database:**")
+        vector_store = st.session_state.vector_store
+        collections = vector_store.list_collections()
+
+        if collections:
+            st.markdown(f"**Collections:** {len(collections)}")
+            for collection in collections:
+                info = vector_store.get_collection_info(collection)
+                st.markdown(f"- {collection}: {info['count']} chunks")
+        else:
+            st.markdown("No collections in vector store yet.")
+
+
+def clean_temp_collections():
+    """Clean up temporary collections from previous runs.
+
+    This is a utility function to remove collections with temp filenames
+    that might have been created before the fix for collection naming.
+    """
+    vector_store = st.session_state.vector_store
+    collections = vector_store.list_collections()
+
+    temp_collections = [c for c in collections if c.startswith("tmp")]
+
+    if temp_collections:
+        st.warning(f"Found {len(temp_collections)} temporary collections. Cleaning up...")
+        for collection in temp_collections:
+            vector_store.delete_collection(collection)
+        st.success("Cleanup complete. Temp collections removed.")
+        return True
+
+    return False
+
+
+def render_vector_store_status() -> None:
+    """Render the vector store status information."""
+    vector_store = st.session_state.vector_store
+    collections = vector_store.list_collections()
+
+    if "document_registry" in collections:
+        collections.remove("document_registry")
+
+    with st.expander("Vector Store Status", expanded=False):
+        st.subheader("Registered Documents")
+        documents = vector_store.list_registered_documents()
+
+        if documents:
+            for doc in documents:
+                st.write(f"- **{doc['original_filename']}** ({doc['collection_name']})")
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.caption(f"Registered: {doc['registered_at'][:16]}")
+                with col2:
+                    if st.button("Delete", key=f"delete_doc_{doc['document_hash']}"):
+                        deleted = vector_store.unregister_document(doc["document_hash"])
+                        if deleted and doc["collection_name"] in collections:
+                            vector_store.delete_collection(doc["collection_name"])
+
+                        if deleted:
+                            st.success(f"Deleted {doc['original_filename']}")
+                            st.rerun()
+        else:
+            st.write("No documents registered.")
+
+        st.divider()
+
+        st.subheader("Collections")
+        if collections:
+            st.write(f"Collections in vector store: {len(collections)}")
+            for collection in collections:
+                info = vector_store.get_collection_info(collection)
+                st.write(f"- **{collection}**: {info['count']} chunks")
+
+                if st.button(f"Delete '{collection}'", key=f"delete_{collection}"):
+                    vector_store.delete_collection(collection)
+                    st.success(f"Collection '{collection}' deleted.")
+                    st.rerun()
+        else:
+            st.write("No collections in the vector store yet.")
+
+        st.divider()
+        st.write(f"**Storage location:** {vector_store.persist_directory}")
+
 
 def render_sidebar() -> None:
     """Render the app sidebar."""
@@ -305,6 +489,8 @@ def render_sidebar() -> None:
 
     selected_provider, selected_model_id = render_model_selection()
     render_advanced_settings(selected_provider, selected_model_id)
+
+    render_vector_store_status()
 
     st.divider()
 
