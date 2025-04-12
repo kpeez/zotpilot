@@ -109,7 +109,7 @@ def process_document(
             if chunk.meta.doc_items and chunk.meta.doc_items[0].prov
             else 0,
             "chunk_id": i,
-            "headings": chunk.meta.headings,
+            "headings": ", ".join(chunk.meta.headings) if chunk.meta.headings else "",
             "source_file": str(pdf_path),
             "timestamp": datetime.datetime.now().isoformat(),
         }
