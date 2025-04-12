@@ -98,6 +98,41 @@ def render_compact_settings_ui() -> None:
     st.session_state.config["top_k"] = top_k
 
 
+def check_vector_store_for_document(content_hash: str, original_filename: str) -> bool:
+    """Check if a document exists in the vector store.
+
+    Args:
+        content_hash: Hash of the document
+        original_filename: Original filename
+
+    Returns:
+        True if document was found in vector store, False otherwise
+    """
+
+    collection_name = original_filename.rsplit(".", 1)[0]  # Remove extension
+    vector_store = st.session_state.vector_store
+    collections = vector_store.list_collections()
+
+    if collection_name in collections:
+        info = vector_store.get_collection_info(collection_name)
+
+        if info["count"] > 0:
+            doc_data = vector_store.get_document_texts(collection_name)
+
+            st.session_state.processed_documents[content_hash] = {
+                "collection_name": collection_name,
+                "chunk_texts": doc_data["documents"],
+                "chunk_metadata": doc_data["metadatas"],
+            }
+
+            st.session_state.filenames[content_hash] = original_filename
+            st.session_state.document_sources[content_hash] = "vector_store"
+
+            return True
+
+    return False
+
+
 def render_upload_section() -> None:
     """Render document upload section in the sidebar."""
     st.markdown("Upload a PDF to start chatting with its content.")
@@ -112,7 +147,13 @@ def render_upload_section() -> None:
         content_hash = hashlib.md5(file_content).hexdigest()
 
         if content_hash in st.session_state.processed_documents:
-            st.success(f"Document already processed: {original_filename}")
+            st.success(f"Document already in session: {original_filename}")
+            if st.session_state.active_document_hash != content_hash:
+                st.session_state.active_document_hash = content_hash
+                st.session_state.messages = []
+                st.rerun()
+        elif check_vector_store_for_document(content_hash, original_filename):
+            st.success(f"Document loaded from vector store: {original_filename}")
             if st.session_state.active_document_hash != content_hash:
                 st.session_state.active_document_hash = content_hash
                 st.session_state.messages = []
@@ -130,19 +171,25 @@ def render_upload_section() -> None:
                 progress_bar.progress(20, "Parsing PDF document...")
                 progress_bar.progress(40, "Extracting text content...")
 
+                # Process the document and store in vector DB
                 document_data = process_document(
-                    pdf_path, embedding_model=st.session_state.embedding_model
+                    pdf_path,
+                    embedding_model=st.session_state.embedding_model,
+                    vector_store=st.session_state.vector_store,
                 )
+
                 progress_bar.progress(70, "Creating embeddings...")
-                progress_bar.progress(90, "Finalizing...")
+                progress_bar.progress(90, "Storing in vector database...")
 
                 st.session_state.processed_documents[content_hash] = document_data
                 st.session_state.filenames[content_hash] = original_filename
                 st.session_state.active_document_hash = content_hash
+                st.session_state.document_sources[content_hash] = "vector_store"
+
                 os.unlink(pdf_path)
 
                 progress_bar.progress(100, "Complete!")
-                st.success(f"Document processed: {original_filename}")
+                st.success(f"Document processed and stored: {original_filename}")
                 st.session_state.messages = []
                 st.rerun()
             except Exception as e:
@@ -181,7 +228,15 @@ def render_document_list() -> None:
     active_doc_data = st.session_state.processed_documents[st.session_state.active_document_hash]
     num_chunks = len(active_doc_data.get("chunk_texts", []))
 
-    st.markdown(f"**Active:** {selected_filename}")
+    # Show source information (from vector store or session)
+    source = st.session_state.document_sources.get(st.session_state.active_document_hash, "session")
+    source_icon = "💾" if source == "vector_store" else "🔄"
+    source_label = (
+        "Loaded from vector store" if source == "vector_store" else "From current session"
+    )
+
+    st.markdown(f"**Active:** {selected_filename} {source_icon}")
+    st.markdown(f"**Source:** {source_label}")
     st.markdown(f"**Total Chunks:** {num_chunks}")
 
     show_chunks = st.checkbox("Show document chunks preview", value=False)
@@ -279,6 +334,19 @@ def render_advanced_settings(selected_provider: str, selected_model_id: str) -> 
 
         if "config" in st.session_state:
             st.session_state.config["top_k"] = top_k
+
+        # Add vector store management section
+        st.markdown("**Vector Database:**")
+        vector_store = st.session_state.vector_store
+        collections = vector_store.list_collections()
+
+        if collections:
+            st.markdown(f"**Collections:** {len(collections)}")
+            for collection in collections:
+                info = vector_store.get_collection_info(collection)
+                st.markdown(f"- {collection}: {info['count']} chunks")
+        else:
+            st.markdown("No collections in vector store yet.")
 
 
 def render_sidebar() -> None:
