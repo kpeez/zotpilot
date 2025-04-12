@@ -1,14 +1,10 @@
----
-title:
----
-
-<p align="left">
+<p align="center">
   <img src="docs/assets/logo.png" width="500" alt="PaperChat logo">
 </p>
 
 ---
 
-Paperchat is an AI-powered assistant that enables you to take your research to the next level by enabling you to chat with your research library.
+Paperchat is an AI-powered assistant that helps you take your research to the next level by enabling you to chat with your research library.
 
 ## Installation
 
