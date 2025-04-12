@@ -80,6 +80,7 @@ def process_document(
     pdf_path: str | Path,
     embedding_model: EmbeddingModel,
     vector_store: VectorStore | None = None,
+    collection_name: str | None = None,
 ) -> dict[str, Any]:
     """Process a document to generate text and embeddings using a provided model.
 
@@ -90,17 +91,17 @@ def process_document(
         pdf_path: Path to the PDF file
         embedding_model: EmbeddingModel instance to use for tokenization and embeddings
         vector_store: VectorStore instance to use for storage. If None, creates a new instance.
+        collection_name: Optional custom name for the collection. If None, uses PDF stem.
 
     Returns:
         Dictionary containing:
-        - collection_name: Name derived from the PDF filename
+        - collection_name: Name used for the collection
         - chunk_texts: List of chunk texts
         - chunk_metadata: List of chunk metadata
         - chunk_embeddings: Tensor of chunk embeddings
     """
     pdf_path = Path(pdf_path)
-    collection_name = pdf_path.stem
-
+    collection_name = collection_name or pdf_path.stem
     chunks = get_pdf_chunks(pdf_path, model=embedding_model)
     chunk_texts, chunk_embeddings = embed_doc_chunks(chunks, model=embedding_model)
     chunk_metadata = [
