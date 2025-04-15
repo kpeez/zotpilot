@@ -17,6 +17,9 @@ class OpenAIAdapter:
     def list_models(client: Any | None = None) -> list[dict[str, Any]]:
         """List available models from OpenAI."""
         return [
+            {"id": "gpt-4.1"},
+            {"id": "gpt-4.1-mini"},
+            {"id": "gpt-4.1-nano"},
             {"id": "gpt-4o"},
             {"id": "gpt-4o-mini"},
         ]
