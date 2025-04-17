@@ -189,10 +189,8 @@ class VectorStore:
             Raw search results from Milvus
         """
         if output_fields is None:
-            # Default fields: all schema fields except embedding, plus pk
-            output_fields = [
-                f.name for f in self.schema.fields if f.name not in ("embedding", "pk")
-            ] + ["pk"]
+            # default: all schema fields except embedding
+            output_fields = [f.name for f in self.schema.fields if f.name != "embedding"]
 
         try:
             self.logger.debug(f"Loading collection '{self.collection_name}' for search.")
