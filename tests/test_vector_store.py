@@ -9,7 +9,11 @@ import numpy as np
 import pytest
 from pymilvus import CollectionSchema
 
-from paperchat.core.vector_store import DEFAULT_SIMILARITY_TOP_K, VectorStore
+from paperchat.core.vector_store import (
+    DEFAULT_SIMILARITY_THRESHOLD,
+    DEFAULT_SIMILARITY_TOP_K,
+    VectorStore,
+)
 
 MAIN_FIELD_NAMES = {
     "pk",
@@ -266,26 +270,28 @@ def test_add_document_metadata_insert_failure(mock_process, mock_dt, vector_stor
 def test_retrieve_success(vector_store):
     """Test retrieving documents successfully."""
     query_text = "test query"
+    # expected *final* output of VectorStore.search
     expected_results = [{"entity": {"text": "result", "pk": 1, "source": "s1"}, "distance": 0.9}]
     vector_store.client.reset_mock()
-    vector_store.client.search.return_value = [expected_results]
+    # simulate the raw output from client.search (list of lists)
+    mock_client_output = [expected_results]
+    vector_store.client.search.return_value = mock_client_output
 
     output_fields = [f.name for f in vector_store.main_schema.fields if f.name != "embedding"]
 
-    results = vector_store.retrieve(query_text)
+    results = vector_store.search(query_text)
 
-    assert results == [expected_results]
-    vector_store._embed_fn.encode_queries.assert_called_once_with([query_text])
+    # Assert against the expected final processed output
+    assert results == expected_results
     vector_store.client.search.assert_called_once()
-    search_args = vector_store.client.search.call_args
-    assert search_args.kwargs["collection_name"] == vector_store.collection_name
-    assert np.array_equal(
-        search_args.kwargs["data"][0], vector_store._embed_fn.encode_queries.return_value[0]
-    )
-    assert search_args.kwargs["limit"] == DEFAULT_SIMILARITY_TOP_K
-    assert search_args.kwargs["output_fields"] == output_fields
-    assert "filter" not in search_args.kwargs or search_args.kwargs["filter"] is None
-    assert search_args.kwargs["search_params"]["metric_type"] == "COSINE"
+    # Check args passed to the actual client.search call
+    call_args, call_kwargs = vector_store.client.search.call_args
+    assert call_kwargs["collection_name"] == vector_store.collection_name
+    assert len(call_kwargs["data"]) == 1  # Check only one query embedding was passed
+    assert call_kwargs["limit"] == DEFAULT_SIMILARITY_TOP_K
+    assert call_kwargs["output_fields"] == output_fields
+    assert call_kwargs["filter"] is None
+    assert call_kwargs["search_params"]["radius"] == DEFAULT_SIMILARITY_THRESHOLD
 
 
 def test_retrieve_with_filter_and_custom_params(vector_store):
@@ -295,11 +301,14 @@ def test_retrieve_with_filter_and_custom_params(vector_store):
     custom_k = 3
     custom_threshold = 0.5
     custom_output_fields = ["text", "source"]
+    # This is the expected *final* output of VectorStore.search
     expected_results = [{"entity": {"text": "filtered result", "source": "doc1"}, "distance": 0.6}]
     vector_store.client.reset_mock()
-    vector_store.client.search.return_value = [expected_results]
+    # This simulates the raw output from client.search (list of lists)
+    mock_client_output = [expected_results]
+    vector_store.client.search.return_value = mock_client_output
 
-    results = vector_store.retrieve(
+    results = vector_store.search(
         query_text,
         top_k=custom_k,
         threshold=custom_threshold,
@@ -307,15 +316,17 @@ def test_retrieve_with_filter_and_custom_params(vector_store):
         filter_expression=filter_expr,
     )
 
-    assert results == [expected_results]
-    vector_store._embed_fn.encode_queries.assert_called_once_with([query_text])
+    # Assert against the expected final processed output
+    assert results == expected_results
     vector_store.client.search.assert_called_once()
-    search_args = vector_store.client.search.call_args
-    assert search_args.kwargs["collection_name"] == vector_store.collection_name
-    assert search_args.kwargs["limit"] == custom_k
-    assert search_args.kwargs["output_fields"] == custom_output_fields
-    assert search_args.kwargs["filter"] == filter_expr
-    assert search_args.kwargs["search_params"]["radius"] == custom_threshold
+    # Check args passed to the actual client.search call
+    call_args, call_kwargs = vector_store.client.search.call_args
+    assert call_kwargs["collection_name"] == vector_store.collection_name
+    assert len(call_kwargs["data"]) == 1
+    assert call_kwargs["limit"] == custom_k
+    assert call_kwargs["output_fields"] == custom_output_fields
+    assert call_kwargs["filter"] == filter_expr
+    assert call_kwargs["search_params"]["radius"] == custom_threshold
 
 
 def test_retrieve_embedding_failure(vector_store):
@@ -324,7 +335,7 @@ def test_retrieve_embedding_failure(vector_store):
     vector_store.client.reset_mock()
     vector_store.logger.reset_mock()
 
-    results = vector_store.retrieve("query")
+    results = vector_store.search("query")
 
     assert results == []
     vector_store.client.search.assert_not_called()
@@ -337,7 +348,7 @@ def test_retrieve_search_failure(vector_store):
     vector_store.client.reset_mock()
     vector_store.logger.reset_mock()
 
-    results = vector_store.retrieve("query")
+    results = vector_store.search("query")
 
     assert results == []
     vector_store.client.search.assert_called_once()

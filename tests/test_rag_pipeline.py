@@ -52,12 +52,12 @@ def test_retrieve(rag_pipeline, mock_vector_store):
     filter_expression = "source == 'test.pdf'"
 
     mock_inner_results = [{"text": "test result"}]
-    mock_vector_store.retrieve.return_value = [mock_inner_results]
+    mock_vector_store.search.return_value = mock_inner_results
 
     results = rag_pipeline.retrieve(query, top_k, threshold, filter_expression)
 
     assert results == mock_inner_results
-    mock_vector_store.retrieve.assert_called_once_with(
+    mock_vector_store.search.assert_called_once_with(
         query_text=query,
         top_k=top_k,
         threshold=threshold,
