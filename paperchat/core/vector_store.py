@@ -1,437 +1,231 @@
-"""Vector storage implementation using ChromaDB.
+"""Vector storage implementation using Milvus.
 
 This module provides a unified interface for storing and retrieving
-document chunks and their embeddings using ChromaDB as the backend.
+document chunks and their embeddings using Milvus as the backend.
 """
 
-import datetime
-import os
 from pathlib import Path
 from typing import Any
 
-import chromadb
-import numpy as np
-import torch
-from chromadb.config import Settings
+from pymilvus import (
+    CollectionSchema,
+    DataType,
+    FieldSchema,
+    MilvusClient,
+    model,
+)
 
-from paperchat.utils.logging import get_component_logger
-
-logger = get_component_logger("vector_store")
+from ..utils.logging import get_component_logger
+from .ingestion import (
+    process_pdf_document,
+)
 
 DEFAULT_SIMILARITY_TOP_K = 5
-DEFAULT_SIMILARITY_THRESHOLD = 0.7
-VECTOR_DB_DIR = str(Path.home() / ".paperchat" / "vectordb")
-DOCUMENT_REGISTRY = "document_registry"
+DEFAULT_SIMILARITY_THRESHOLD = 0.2
 
 
 class VectorStore:
-    """Vector storage implementation using ChromaDB.
+    """
+    Handles interactions with a Milvus vector store collection for document chunks.
 
-    This class provides a unified interface for storing document embeddings,
-    retrieving similar documents, and managing collections within ChromaDB.
+    Attributes:
+        db_path (str): Path to the Milvus Lite database file.
+        collection_name (str): Name of the collection managed by this instance.
+        embedding_dim (int): Dimension of the vectors stored.
+        client (MilvusClient): The initialized Milvus client.
+        schema (CollectionSchema): The schema used for the collection.
     """
 
-    def __init__(self, persist_directory: str | None = None, create_directory: bool = True):
-        """Initialize the VectorStore with a persistence directory.
+    DEFAULT_COLLECTION_NAME = "paperchat_docs"
+    VECTOR_DB_DIR = str(Path.home() / ".paperchat" / "paperchat.db")
 
-        Args:
-            persist_directory: Directory where ChromaDB will store its data.
-                If None, uses ~/.paperchat/vectordb.
-            create_directory: Whether to create the persistence directory if it
-                doesn't exist.
+    def __init__(self):
         """
-        self.persist_directory = persist_directory or VECTOR_DB_DIR
-        logger.info(f"Initializing VectorStore with directory: {self.persist_directory}")
+        Initializes the MilvusVectorStore, connects to Milvus, and ensures
+        the specified collection and index exist.
 
-        if create_directory:
-            os.makedirs(self.persist_directory, exist_ok=True)
-            logger.debug(f"Created vector store directory: {self.persist_directory}")
+        """
+        self.db_path = self.VECTOR_DB_DIR
+        self.collection_name = self.DEFAULT_COLLECTION_NAME
+        # TODO: allow passing in different embedding functions
+        self._embed_fn = model.DefaultEmbeddingFunction()
+        self.embedding_dim = getattr(self._embed_fn, "dim", 768)
+        self.logger = get_component_logger(f"MilvusVectorStore[{self.collection_name}]")
+        try:
+            self.client = MilvusClient(uri=self.db_path)
+        except Exception as e:
+            self.logger.exception(f"Failed to initialize MilvusClient: {e}")
+            raise
 
-        self.client = chromadb.PersistentClient(
-            path=self.persist_directory,
-            settings=Settings(
-                anonymized_telemetry=False,
-                allow_reset=True,
+        self.schema = self._define_schema()
+        self.get_or_create_collection()
+        self.build_index()
+
+    def _define_schema(self) -> CollectionSchema:
+        """Defines the Milvus collection schema."""
+        fields = [
+            FieldSchema(name="pk", dtype=DataType.INT64, is_primary=True, auto_id=True),
+            FieldSchema(
+                name="chunk_id",
+                dtype=DataType.VARCHAR,
+                max_length=64,
+                description="Original chunk identifier",
             ),
+            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=self.embedding_dim),
+            FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=32768),
+            FieldSchema(
+                name="label", dtype=DataType.ARRAY, element_type=DataType.VARCHAR, max_length=64
+            ),
+            FieldSchema(name="page_numbers", dtype=DataType.ARRAY, element_type=DataType.INT16),
+            FieldSchema(name="headings", dtype=DataType.VARCHAR, max_length=512),
+            FieldSchema(
+                name="source",
+                dtype=DataType.VARCHAR,
+                max_length=512,
+                description="Source document filename",
+            ),
+        ]
+
+        return CollectionSchema(
+            fields, description="Document Chunks Collection", enable_dynamic_field=True
         )
-        logger.debug(f"ChromaDB client initialized with path: {self.persist_directory}")
 
-    def list_collections(self) -> list[str]:
-        """List all available collections in the database.
-
-        Returns:
-            List of collection names
-        """
-        collections = self.client.list_collections()
-        collection_names = [collection.name for collection in collections]
-        logger.debug(f"Found collections: {collection_names}")
-        return collection_names
-
-    def create_collection(self, collection_name: str) -> chromadb.Collection:
-        """Create a new collection or get existing one with the given name.
-
-        Args:
-            collection_name: Name of the collection to create
-
-        Returns:
-            ChromaDB collection object
-        """
-        logger.debug(f"Creating/getting collection: {collection_name}")
-        return self.client.get_or_create_collection(name=collection_name)
-
-    def delete_collection(self, collection_name: str) -> None:
-        """Delete a collection from the database.
-
-        Args:
-            collection_name: Name of the collection to delete
-        """
-        logger.info(f"Deleting collection: {collection_name}")
-        self.client.delete_collection(name=collection_name)
-
-    def add_document(
-        self,
-        collection_name: str,
-        chunk_texts: list[str],
-        chunk_embeddings: torch.Tensor | np.ndarray,
-        chunk_metadata: list[dict[str, Any]],
-        ids: list[str] | None = None,
-    ) -> None:
-        """Add document chunks to a collection.
-
-        Args:
-            collection_name: Name of the collection to add to
-            chunk_texts: List of text chunks
-            chunk_embeddings: Tensor or array of chunk embeddings
-            chunk_metadata: List of metadata dictionaries for each chunk
-            ids: Optional list of IDs for each chunk. If None, generated automatically.
-        """
-        logger.info(f"Adding document to collection '{collection_name}': {len(chunk_texts)} chunks")
-        collection = self.create_collection(collection_name)
-
-        if isinstance(chunk_embeddings, torch.Tensor):
-            embeddings = chunk_embeddings.cpu().numpy()
-        else:
-            embeddings = chunk_embeddings
-
-        if ids is None:
-            ids = [f"{collection_name}_{i}" for i in range(len(chunk_texts))]
-
-        # Log metadata structure at debug level
-        if chunk_metadata and chunk_metadata[0]:
-            logger.debug(f"Metadata structure (first item): {list(chunk_metadata[0].keys())}")
-
-        # Verify we don't have list values in metadata which ChromaDB doesn't support
-        for i, metadata in enumerate(chunk_metadata):
-            for key, value in list(metadata.items()):
-                if isinstance(value, list):
-                    logger.debug(f"Converting list to string in metadata[{i}][{key}]")
-                    chunk_metadata[i][key] = ", ".join(map(str, value)) if value else ""
-
-        collection.add(
-            documents=chunk_texts,
-            embeddings=embeddings,
-            metadatas=chunk_metadata,
-            ids=ids,
-        )
-        logger.info(f"Successfully added document to collection '{collection_name}'")
-
-    def register_document(
-        self,
-        document_hash: str,
-        original_filename: str,
-        collection_name: str,
-        metadata: dict[str, Any] | None = None,
-    ) -> None:
-        """Register a document in the document registry.
-
-        This stores metadata about documents without duplicating the files.
-
-        Args:
-            document_hash: Hash of the document content
-            original_filename: Original filename
-            collection_name: Name of the collection where chunks are stored
-            metadata: Additional metadata to store with the document
-        """
-        # Create a document registry collection if it doesn't exist
-        registry = self.create_collection(DOCUMENT_REGISTRY)
-
-        # Create metadata for the document
-        doc_metadata = {
-            "original_filename": original_filename,
-            "collection_name": collection_name,
-            "registered_at": datetime.datetime.now().isoformat(),
-        }
-
-        # Add any additional metadata
-        if metadata:
-            doc_metadata.update(metadata)
-
-        # Store in the registry - using document_hash as the ID
-        registry.upsert(
-            ids=[document_hash],
-            documents=[f"Document: {original_filename}"],
-            metadatas=[doc_metadata],
-        )
-        logger.info(f"Registered document: {original_filename} (hash: {document_hash})")
-
-    def get_document_info(self, document_hash: str) -> tuple[bool, dict[str, Any]]:
-        """Get information about a registered document.
-
-        Args:
-            document_hash: Hash of the document content
-
-        Returns:
-            Tuple of (exists, metadata)
-        """
+    def get_or_create_collection(self) -> None:
+        """Creates the collection if it doesn't exist."""
         try:
-            if DOCUMENT_REGISTRY not in self.list_collections():
-                return False, {}
-
-            registry = self.client.get_collection(DOCUMENT_REGISTRY)
-            result = registry.get(ids=[document_hash])
-
-            if result and result["ids"]:
-                return True, result["metadatas"][0]
-            return False, {}
-        except Exception as e:
-            logger.warning(f"Error getting document info: {e}")
-            return False, {}
-
-    def list_registered_documents(self) -> list[dict[str, Any]]:
-        """List all registered documents.
-
-        Returns:
-            List of document metadata dictionaries
-        """
-        try:
-            if DOCUMENT_REGISTRY not in self.list_collections():
-                return []
-
-            registry = self.client.get_collection(DOCUMENT_REGISTRY)
-            result = registry.get()
-
-            documents = []
-            for i, doc_id in enumerate(result["ids"]):
-                doc_info = {"document_hash": doc_id, **result["metadatas"][i]}
-                documents.append(doc_info)
-
-            return documents
-        except Exception as e:
-            logger.warning(f"Error listing documents: {e}")
-            return []
-
-    def unregister_document(self, document_hash: str) -> bool:
-        """Remove a document from the registry.
-
-        This doesn't remove the actual collection with chunks.
-
-        Args:
-            document_hash: Hash of the document to unregister
-
-        Returns:
-            True if document was found and unregistered, False otherwise
-        """
-        try:
-            if DOCUMENT_REGISTRY not in self.list_collections():
-                return False
-
-            exists, metadata = self.get_document_info(document_hash)
-            if not exists:
-                return False
-
-            registry = self.client.get_collection(DOCUMENT_REGISTRY)
-            registry.delete(ids=[document_hash])
-            logger.info(
-                f"Unregistered document: {metadata.get('original_filename', document_hash)}"
-            )
-            return True
-        except Exception as e:
-            logger.warning(f"Error unregistering document: {e}")
-            return False
-
-    def update_embeddings(
-        self,
-        collection_name: str,
-        ids: list[str],
-        embeddings: torch.Tensor | np.ndarray,
-    ) -> None:
-        """Update embeddings for existing documents in a collection.
-
-        This allows changing the embedding model without re-chunking documents.
-
-        Args:
-            collection_name: Name of the collection to update
-            ids: List of document IDs to update
-            embeddings: New embeddings to assign to the documents
-        """
-        logger.info(
-            f"Updating embeddings for {len(ids)} documents in collection '{collection_name}'"
-        )
-        collection = self.client.get_collection(name=collection_name)
-
-        if isinstance(embeddings, torch.Tensor):
-            embeddings_array = embeddings.cpu().numpy()
-        else:
-            embeddings_array = embeddings
-
-        collection.update(
-            ids=ids,
-            embeddings=embeddings_array,
-        )
-
-    def reembed_collection(
-        self,
-        collection_name: str,
-        embedding_model: Any,
-        batch_size: int = 32,
-    ) -> None:
-        """Re-embed all documents in a collection with a new embedding model.
-
-        This retrieves all documents from the collection, generates new embeddings,
-        and updates the collection with the new embeddings.
-
-        Args:
-            collection_name: Name of the collection to re-embed
-            embedding_model: Model to use for generating new embeddings
-                (must have an embed_text method)
-            batch_size: Batch size for embedding generation
-        """
-        logger.info(f"Re-embedding collection '{collection_name}'")
-        collection = self.client.get_collection(name=collection_name)
-
-        result = collection.get()
-
-        if not result["ids"]:
-            logger.warning(f"Collection '{collection_name}' is empty, nothing to re-embed")
-            return
-
-        logger.info(f"Found {len(result['ids'])} documents to re-embed")
-
-        for i in range(0, len(result["ids"]), batch_size):
-            batch_ids = result["ids"][i : i + batch_size]
-            batch_texts = result["documents"][i : i + batch_size]
-
-            logger.debug(
-                f"Re-embedding batch {i // batch_size + 1}/{(len(result['ids']) - 1) // batch_size + 1}"
-            )
-            new_embeddings = embedding_model.embed_text(batch_texts)
-
-            self.update_embeddings(
-                collection_name=collection_name,
-                ids=batch_ids,
-                embeddings=new_embeddings,
-            )
-
-        logger.info(f"Re-embedding of collection '{collection_name}' complete")
-
-    def get_document_texts(self, collection_name: str) -> dict[str, Any]:
-        """Get all documents and their metadata from a collection.
-
-        This is useful for retrieving the original texts to re-embed them
-        with a different model.
-
-        Args:
-            collection_name: Name of the collection
-
-        Returns:
-            Dictionary with document IDs, texts, and metadata
-        """
-        logger.info(f"Getting document texts from collection '{collection_name}'")
-        collection = self.client.get_collection(name=collection_name)
-        result = collection.get()
-        logger.info(f"Retrieved {len(result['ids'])} documents from collection '{collection_name}'")
-
-        return {
-            "ids": result["ids"],
-            "documents": result["documents"],
-            "metadatas": result["metadatas"],
-        }
-
-    def search(
-        self,
-        query_embedding: torch.Tensor | np.ndarray,
-        collection_names: str | list[str] | None = None,
-        top_k: int = DEFAULT_SIMILARITY_TOP_K,
-        threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
-        filter_criteria: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Search for similar chunks across collections.
-
-        Args:
-            query_embedding: Embedding of the query
-            collection_names: Name or list of collection names to search in.
-                If None, searches all collections.
-            top_k: Number of results to return per collection
-            threshold: Similarity threshold (0-1)
-            filter_criteria: Optional filter criteria for metadata
-
-        Returns:
-            Dictionary with search results
-        """
-        logger.debug(f"Searching collections with top_k={top_k}, threshold={threshold}")
-        if isinstance(query_embedding, torch.Tensor):
-            query_embedding = query_embedding.cpu().numpy()
-
-        if isinstance(collection_names, str):
-            collection_names = [collection_names]
-
-        if collection_names is None:
-            collection_names = self.list_collections()
-
-        # Filter out the document registry from search collections
-        if DOCUMENT_REGISTRY in collection_names:
-            collection_names.remove(DOCUMENT_REGISTRY)
-
-        logger.debug(f"Searching in collections: {collection_names}")
-        results = {}
-
-        for name in collection_names:
-            try:
-                collection = self.client.get_collection(name=name)
-
-                query_results = collection.query(
-                    query_embeddings=query_embedding.reshape(1, -1),
-                    n_results=top_k,
-                    where=filter_criteria,
+            collection_exists = self.client.has_collection(self.collection_name)
+            if not collection_exists:
+                self.logger.info(f"Creating collection '{self.collection_name}'")
+                self.client.create_collection(
+                    collection_name=self.collection_name, schema=self.schema
                 )
 
-                # Filter by threshold
-                filtered_indices = []
-                for i, distance in enumerate(query_results["distances"][0]):
-                    similarity = 1.0 - distance
-                    if similarity >= threshold:
-                        filtered_indices.append(i)
+        except Exception as e:
+            self.logger.exception(f"Failed to create collection: {e}")
+            raise
 
-                results[name] = {
-                    "documents": [query_results["documents"][0][i] for i in filtered_indices],
-                    "metadatas": [query_results["metadatas"][0][i] for i in filtered_indices],
-                    "distances": [query_results["distances"][0][i] for i in filtered_indices],
-                    "ids": [query_results["ids"][0][i] for i in filtered_indices],
-                }
-                logger.debug(f"Found {len(filtered_indices)} results in collection '{name}'")
+    def build_index(self) -> None:
+        """Creates a vector index on the embedding field."""
+        try:
+            index_params = self.client.prepare_index_params()
+            index_params.add_index(
+                field_name="embedding",
+                index_type="IVF_FLAT",
+                metric_type="COSINE",
+                params={"nlist": 128},
+            )
 
-            except ValueError:
-                # Collection doesn't exist, skip
-                logger.warning(f"Collection '{name}' not found, skipping")
-                continue
+            self.client.create_index(
+                collection_name=self.collection_name,
+                index_params=index_params,
+            )
+        except Exception as e:
+            self.logger.warning(f"Could not create index: {e}")
 
-        logger.info(f"Search completed across {len(collection_names)} collections")
-        return results
-
-    def get_collection_info(self, collection_name: str) -> dict[str, Any]:
-        """Get information about a collection.
+    def add_document(self, pdf_path: str | Path, max_tokens: int = 1024) -> bool:
+        """
+        Processes a PDF document, extracts chunks, generates embeddings,
+        and inserts them into the Milvus collection. Automatically skips
+        documents that have already been inserted.
 
         Args:
-            collection_name: Name of the collection
+            pdf_path: Path to the PDF file.
+            max_tokens: Maximum number of tokens per chunk
 
         Returns:
-            Dictionary with collection information
+            True if the document was successfully processed and inserted, False otherwise
         """
-        logger.debug(f"Getting info for collection '{collection_name}'")
-        collection = self.client.get_collection(name=collection_name)
-        count = collection.count()
-        logger.debug(f"Collection '{collection_name}' has {count} items")
-        return {
-            "name": collection_name,
-            "count": count,
+        pdf_file = Path(pdf_path)
+        self.logger.info(f"Processing: {pdf_file.name}")
+
+        try:
+            # check if document already exists in the collection
+            existing = self.client.query(
+                collection_name=self.collection_name,
+                filter=f'source == "{pdf_file.stem}"',
+                output_fields=["source"],
+                limit=1,
+            )
+
+            if existing:
+                self.logger.info(f"Document '{pdf_file.stem}' already exists. Skipping.")
+                return True
+
+            pdf_data = process_pdf_document(
+                pdf_path, embed_fn=self._embed_fn, max_tokens_per_chunk=max_tokens
+            )
+
+            result = self.client.insert(collection_name=self.collection_name, data=pdf_data)
+            insert_count = result.get("insert_count", 0)
+            self.logger.info(f"Successfully inserted {insert_count} chunks")
+
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"Failed to insert data: {e}")
+
+            return False
+
+    def retrieve(
+        self,
+        query_text: str,
+        top_k: int = DEFAULT_SIMILARITY_TOP_K,
+        threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+        output_fields: list[str] | None = None,
+        filter_expression: str | None = None,  # For metadata filtering later
+    ) -> list[dict[str, Any]]:
+        """
+        Searches the collection for text chunks similar to the query text.
+
+        Args:
+            query_text: The text to search for.
+            top_k: The maximum number of results to return.
+            threshold: The minimum similarity score to return.
+            output_fields: List of field names to include in the results.
+                           Defaults to schema fields plus similarity/distance.
+            filter_expression: Milvus filter expression string (e.g., "source == 'doc1.pdf'").
+
+        Returns:
+            Raw search results from Milvus
+        """
+        if output_fields is None:
+            # default: all schema fields except embedding
+            output_fields = [f.name for f in self.schema.fields if f.name != "embedding"]
+
+        try:
+            self.logger.debug(f"Loading collection '{self.collection_name}' for search.")
+            self.client.load_collection(self.collection_name)
+            query_embedding = self._embed_fn.encode_queries([query_text])[0]
+        except Exception as e:
+            self.logger.exception(f"Failed to generate query embedding or load collection: {e}")
+            return []
+
+        ########################################################################
+        # radius and range_filter are used to filter results by distance
+        # radius is boundary furthest from "ideal"
+        # range_filter is boundary closest to "ideal"
+        # for COSINE: radius <= similarity <= range_filter
+        # for L2: radius >= similarity >= range_filter
+        ########################################################################
+        search_params = {
+            "nprobe": 10,
+            "metric_type": "COSINE",
+            "radius": threshold,
+            "range_filter": 1.0,
         }
+
+        try:
+            results = self.client.search(
+                collection_name=self.collection_name,
+                data=[query_embedding],
+                search_params=search_params,
+                limit=top_k,
+                output_fields=output_fields,
+                filter=filter_expression,
+            )
+
+        except Exception as e:
+            self.logger.exception(f"Search failed: {e}")
+            results = []
+
+        return results

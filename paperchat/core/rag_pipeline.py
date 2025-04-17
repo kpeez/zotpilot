@@ -1,11 +1,8 @@
-from pathlib import Path
 from typing import Any, Generator
 
 from ..llms.manager import LLMManager
 from ..utils.formatting import format_context
-from .embeddings import EmbeddingModel
-from .ingestion import process_document
-from .retrieval import similarity_search
+from .vector_store import DEFAULT_SIMILARITY_THRESHOLD, VectorStore
 
 
 class RAGPipeline:
@@ -16,56 +13,42 @@ class RAGPipeline:
     of responses using a configured LLM.
     """
 
-    def __init__(self, llm_manager: LLMManager, embedding_model: EmbeddingModel):
+    def __init__(self, llm_manager: LLMManager):
         """
         Initializes the RAG pipeline with necessary components.
 
         Args:
             llm_manager: An instance of LLMManager to handle LLM interactions.
-            embedding_model: An instance of EmbeddingModel for text embeddings.
         """
         self.llm_manager = llm_manager
-        self.embedding_model = embedding_model
-
-    def _ensure_document_data(
-        self, document_data: dict[str, Any] | None = None, pdf_path: str | Path | None = None
-    ) -> dict[str, Any]:
-        """
-        Ensures document data is available, processing PDF if necessary.
-
-        Raises:
-            ValueError: If neither document_data nor pdf_path is provided.
-        """
-        if document_data:
-            return document_data
-        if pdf_path:
-            return process_document(pdf_path, embedding_model=self.embedding_model)
-
-        raise ValueError("Either document_data or pdf_path must be provided")
+        self.vector_store = VectorStore()
 
     def retrieve(
-        self, query: str, document_data: dict[str, Any], top_k: int = 5
+        self,
+        query: str,
+        top_k: int = 5,
+        threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+        filter_expression: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         Retrieves relevant document chunks based on the query.
 
         Args:
             query: The user's query text.
-            document_data: Processed document data containing texts and embeddings.
             top_k: The number of chunks to retrieve.
-
+            threshold: The minimum similarity score to return.
+            filter_expression: A filter expression to apply to the query.
         Returns:
             A list of retrieved document chunk dictionaries with metadata.
         """
-        query_embedding = self.embedding_model.embed_text([query])[0]
-
-        return similarity_search(
-            query_embedding=query_embedding,
-            chunk_texts=document_data["chunk_texts"],
-            chunk_embeddings=document_data["chunk_embeddings"],
-            chunk_metadata=document_data["chunk_metadata"],
+        # returns a Milvus ExtraList where the actual list[dict] is the first element
+        results = self.vector_store.retrieve(
+            query_text=query,
             top_k=top_k,
+            threshold=threshold,
+            filter_expression=filter_expression,
         )
+        return results[0]
 
     def generate(
         self, query: str, retrieved_results: list[dict[str, Any]], stream: bool = False
@@ -75,7 +58,7 @@ class RAGPipeline:
 
         Args:
             query: The user's query text.
-            retrieved_results: List of document chunks retrieved as context.
+            retrieved_results: List of document text and metadata retrieved as context.
             stream: Whether to stream the response.
 
         Returns:
@@ -91,8 +74,6 @@ class RAGPipeline:
     def run(
         self,
         query: str,
-        document_data: dict[str, Any] | None = None,
-        pdf_path: str | Path | None = None,
         top_k: int = 5,
         stream: bool = False,
     ) -> tuple[str | Generator[str, None, None], list[dict[str, Any]]]:
@@ -109,8 +90,7 @@ class RAGPipeline:
         Returns:
             A tuple containing the generated response and the list of retrieved chunks.
         """
-        processed_data = self._ensure_document_data(document_data, pdf_path)
-        retrieved_chunks = self.retrieve(query, processed_data, top_k)
+        retrieved_chunks = self.retrieve(query, top_k)
         response = self.generate(query, retrieved_chunks, stream)
 
         return response, retrieved_chunks

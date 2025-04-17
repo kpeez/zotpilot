@@ -3,6 +3,7 @@
 import logging
 import logging.handlers
 import os
+from datetime import date
 from pathlib import Path
 
 
@@ -43,9 +44,7 @@ def setup_logger(
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
 
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_file, maxBytes=10 * 1024 * 1024, backupCount=5
-        )
+        file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(file_level)
         file_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         file_handler.setFormatter(file_format)
@@ -57,7 +56,8 @@ def setup_logger(
 def get_component_logger(component_name: str) -> logging.Logger:
     """Get a logger for a specific component with standard configuration.
 
-    This creates a logger with both console and file output.
+    Logs will be stored in date-based subdirectories, with a unique
+    log file per process execution based on PID.
 
     Args:
         component_name: Name of the component (e.g., 'vector_store', 'embeddings')
@@ -65,9 +65,14 @@ def get_component_logger(component_name: str) -> logging.Logger:
     Returns:
         Configured logger for the component
     """
-    log_dir = Path.home() / ".paperchat" / "logs"
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = log_dir / f"{component_name}.log"
+    today_str = date.today().strftime("%Y-%m-%d")
+    log_dir_base = Path.home() / ".paperchat" / "logs"
+    log_dir_dated = log_dir_base / today_str
+
+    os.makedirs(log_dir_dated, exist_ok=True)
+
+    pid = os.getpid()
+    log_file = log_dir_dated / f"{component_name}_pid{pid}.log"
 
     return setup_logger(
         logger_name=component_name,

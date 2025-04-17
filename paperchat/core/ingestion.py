@@ -1,14 +1,11 @@
 import datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from docling.chunking import DocChunk, HybridChunker
 from docling.datamodel.document import DoclingDocument
 from docling.document_converter import DocumentConverter
-from transformers import AutoTokenizer
-
-from .embeddings import EmbeddingModel, embed_doc_chunks
-from .vector_store import VectorStore
+from pymilvus import model
 
 
 def parse_pdf(pdf_path: str | Path) -> DoclingDocument:
@@ -27,109 +24,64 @@ def parse_pdf(pdf_path: str | Path) -> DoclingDocument:
     return result.document
 
 
-def chunk_document(
-    document: DoclingDocument,
-    tokenizer: AutoTokenizer | None = None,
-    merge_peers: bool = True,
-) -> Iterator[DocChunk]:
-    """Chunk a document into semantic chunks.
+def extract_page_numbers(chunk: DocChunk) -> list[int]:
+    """Extract page numbers from a DocChunk.
 
     Args:
-        document: Document to chunk
-        tokenizer: Tokenizer to use, will load default if None
-        merge_peers: Whether to merge peer chunks. Default is True.
+        chunk: DocChunk to extract page numbers from
 
     Returns:
-        Iterator of document chunks
+        List of page numbers
     """
-    if tokenizer is None:
-        embedding_model = EmbeddingModel()
-        tokenizer = embedding_model.tokenizer
+    page_numbers = set()
+    for item in chunk.meta.doc_items:
+        for prov in item.prov:
+            page_numbers.add(prov.page_no)
 
-    max_tokens = tokenizer.model_max_length
-
-    chunker = HybridChunker(
-        tokenizer=tokenizer,
-        max_tokens=max_tokens,
-        merge_peers=merge_peers,
-    )
-
-    return chunker.chunk(document)
+    return sorted(page_numbers)
 
 
-def get_pdf_chunks(
+def process_pdf_document(
     pdf_path: str | Path,
-    model: EmbeddingModel,
-) -> list[DocChunk]:
-    """Get chunks from a PDF document.
+    embed_fn: Any | None = None,
+    max_tokens_per_chunk: int = 1024,
+) -> list[dict[str, Any]]:
+    """Process a PDF document into a list of dictionaries ready for vector database insertion.
 
-    Args:
-        pdf_path: Path to the PDF file (can be string or Path object)
-        model: EmbeddingModel instance to use for tokenization
-
-    Returns:
-        List of document chunks
-    """
-    document = parse_pdf(pdf_path)
-    chunks = list(chunk_document(document, tokenizer=model.tokenizer))
-
-    return chunks
-
-
-def process_document(
-    pdf_path: str | Path,
-    embedding_model: EmbeddingModel,
-    vector_store: VectorStore | None = None,
-    collection_name: str | None = None,
-) -> dict[str, Any]:
-    """Process a document to generate text and embeddings using a provided model.
-
-    This function handles the full pipeline from raw PDF to text and embeddings
-    and stores the results in the vector database.
+    This function handles the document processing pipeline and returns data in a format
+    ready to be directly inserted into a vector database.
 
     Args:
         pdf_path: Path to the PDF file
-        embedding_model: EmbeddingModel instance to use for tokenization and embeddings
-        vector_store: VectorStore instance to use for storage. If None, creates a new instance.
-        collection_name: Optional custom name for the collection. If None, uses PDF stem.
+        embed_fn: Function to use for embedding generation, defaults to Milvus DefaultEmbeddingFunction
+        max_tokens_per_chunk: Maximum number of tokens per chunk
 
     Returns:
-        Dictionary containing:
-        - collection_name: Name used for the collection
-        - chunk_texts: List of chunk texts
-        - chunk_metadata: List of chunk metadata
-        - chunk_embeddings: Tensor of chunk embeddings
+        List of dictionaries with fields matching the Milvus schema, ready for direct insertion
     """
-    pdf_path = Path(pdf_path)
-    collection_name = collection_name or pdf_path.stem
-    chunks = get_pdf_chunks(pdf_path, model=embedding_model)
-    chunk_texts, chunk_embeddings = embed_doc_chunks(chunks, model=embedding_model)
-    chunk_metadata = [
-        {
-            "page": chunk.meta.doc_items[0].prov[0].page_no
-            if chunk.meta.doc_items and chunk.meta.doc_items[0].prov
-            else 0,
-            "chunk_id": i,
-            "headings": ", ".join(chunk.meta.headings) if chunk.meta.headings else "",
-            "source_file": str(pdf_path),
+    if embed_fn is None:
+        embed_fn = model.DefaultEmbeddingFunction()
+
+    pdf_file = Path(pdf_path)
+    pdf_doc = parse_pdf(pdf_file)
+    chunker = HybridChunker(max_tokens=max_tokens_per_chunk, merge_peers=True)
+    pdf_chunks = list(chunker.chunk(pdf_doc))
+
+    texts = [chunker.contextualize(chunk) for chunk in pdf_chunks]
+    embeddings = embed_fn.encode_documents(texts)
+
+    data_entries = []
+    for i, (chunk, embedding) in enumerate(zip(pdf_chunks, embeddings, strict=True)):
+        data_entry = {
+            "chunk_id": f"chunk_{i:02d}",
+            "embedding": embedding,
+            "text": chunk.text,
+            "label": [item.label for item in chunk.meta.doc_items or []],
+            "source": pdf_file.stem,
+            "page_numbers": extract_page_numbers(chunk),
+            "headings": ", ".join(chunk.meta.headings).lower() if chunk.meta.headings else "",
             "timestamp": datetime.datetime.now().isoformat(),
         }
-        for i, chunk in enumerate(chunks)
-    ]
+        data_entries.append(data_entry)
 
-    if vector_store is None:
-        vector_store = VectorStore()
-
-    vector_store.add_document(
-        collection_name=collection_name,
-        chunk_texts=chunk_texts,
-        chunk_embeddings=chunk_embeddings,
-        chunk_metadata=chunk_metadata,
-    )
-
-    return {
-        "collection_name": collection_name,
-        "chunk_texts": chunk_texts,
-        "chunk_metadata": chunk_metadata,
-        "chunk_embeddings": chunk_embeddings,
-    }
+    return data_entries
