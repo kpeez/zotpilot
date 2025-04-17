@@ -170,6 +170,7 @@ class VectorStore:
         self,
         query_text: str,
         top_k: int = DEFAULT_SIMILARITY_TOP_K,
+        threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
         output_fields: list[str] | None = None,
         filter_expression: str | None = None,  # For metadata filtering later
     ) -> list[dict[str, Any]]:
@@ -179,6 +180,7 @@ class VectorStore:
         Args:
             query_text: The text to search for.
             top_k: The maximum number of results to return.
+            threshold: The minimum similarity score to return.
             output_fields: List of field names to include in the results.
                            Defaults to schema fields plus similarity/distance.
             filter_expression: Milvus filter expression string (e.g., "source == 'doc1.pdf'").
@@ -210,7 +212,7 @@ class VectorStore:
         search_params = {
             "nprobe": 10,
             "metric_type": "COSINE",
-            "radius": DEFAULT_SIMILARITY_THRESHOLD,
+            "radius": threshold,
             "range_filter": 1.0,
         }
 
