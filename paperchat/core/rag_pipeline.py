@@ -41,14 +41,13 @@ class RAGPipeline:
         Returns:
             A list of retrieved document chunk dictionaries with metadata.
         """
-        # returns a Milvus ExtraList where the actual list[dict] is the first element
-        results = self.vector_store.retrieve(
+        results = self.vector_store.search(
             query_text=query,
             top_k=top_k,
             threshold=threshold,
             filter_expression=filter_expression,
         )
-        return results[0]
+        return results
 
     def generate(
         self, query: str, retrieved_results: list[dict[str, Any]], stream: bool = False

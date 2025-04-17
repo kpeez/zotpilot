@@ -153,7 +153,7 @@ class VectorStore:
             self.logger.exception(f"Failed processing/adding document {source_id}: {e}")
             return False
 
-    def retrieve(
+    def search(
         self,
         query_text: str,
         top_k: int = DEFAULT_SIMILARITY_TOP_K,
@@ -173,7 +173,8 @@ class VectorStore:
             filter_expression: Milvus filter expression string (e.g., "source == 'doc1.pdf'").
 
         Returns:
-            Raw search results from Milvus.
+            A list of dictionaries representing the retrieved chunks, ordered by similarity.
+            Returns an empty list if no results are found or an error occurs.
         """
         if output_fields is None:
             # default: all schema fields except embedding
@@ -194,7 +195,8 @@ class VectorStore:
         }
 
         try:
-            results = self.client.search(
+            # Milvus returns a list of lists (one per query embedding)
+            raw_results = self.client.search(
                 collection_name=self.collection_name,
                 data=[query_embedding],
                 search_params=search_params,
@@ -202,6 +204,8 @@ class VectorStore:
                 output_fields=output_fields,
                 filter=filter_expression,
             )
+            results = raw_results[0]
+
         except Exception as e:
             self.logger.exception(f"Search failed: {e}")
             results = []
@@ -226,6 +230,7 @@ class VectorStore:
             )
             self.logger.info(f"Found {len(results)} documents in metadata.")
             return results
+
         except Exception as e:
             self.logger.exception(f"Failed to list documents from metadata: {e}")
             return []
