@@ -21,7 +21,7 @@ from .ingestion import (
 )
 
 DEFAULT_SIMILARITY_TOP_K = 5
-DEFAULT_SIMILARITY_THRESHOLD = 0.7
+DEFAULT_SIMILARITY_THRESHOLD = 0.2
 
 
 class VectorStore:
@@ -58,8 +58,8 @@ class VectorStore:
             raise
 
         self.schema = self._define_schema()
-        self.build_index()
         self.get_or_create_collection()
+        self.build_index()
 
     def _define_schema(self) -> CollectionSchema:
         """Defines the Milvus collection schema."""
@@ -122,7 +122,7 @@ class VectorStore:
         except Exception as e:
             self.logger.warning(f"Could not create index: {e}")
 
-    def add_document(self, pdf_path: str | Path, max_tokens: int | None = None) -> bool:
+    def add_document(self, pdf_path: str | Path, max_tokens: int = 1024) -> bool:
         """
         Processes a PDF document, extracts chunks, generates embeddings,
         and inserts them into the Milvus collection. Automatically skips
@@ -156,7 +156,8 @@ class VectorStore:
             )
 
             result = self.client.insert(collection_name=self.collection_name, data=pdf_data)
-            self.logger.info(f"Successfully inserted {result.insert_count} chunks")
+            insert_count = result.get("insert_count", 0)
+            self.logger.info(f"Successfully inserted {insert_count} chunks")
 
             return True
 
@@ -192,9 +193,11 @@ class VectorStore:
             ] + ["pk"]
 
         try:
+            self.logger.debug(f"Loading collection '{self.collection_name}' for search.")
+            self.client.load_collection(self.collection_name)
             query_embedding = self._embed_fn.encode_queries([query_text])[0]
         except Exception as e:
-            self.logger.exception(f"Failed to generate query embedding: {e}")
+            self.logger.exception(f"Failed to generate query embedding or load collection: {e}")
             return []
 
         ########################################################################
@@ -214,7 +217,7 @@ class VectorStore:
         try:
             results = self.client.search(
                 collection_name=self.collection_name,
-                data=query_embedding,
+                data=[query_embedding],
                 search_params=search_params,
                 limit=top_k,
                 output_fields=output_fields,
