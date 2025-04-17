@@ -4,6 +4,7 @@ This module provides a unified interface for storing and retrieving
 document chunks and their embeddings using Milvus as the backend.
 """
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,38 +32,275 @@ class VectorStore:
     Attributes:
         db_path (str): Path to the Milvus Lite database file.
         collection_name (str): Name of the collection managed by this instance.
+        metadata_collection_name (str): Name of the metadata collection.
         embedding_dim (int): Dimension of the vectors stored.
         client (MilvusClient): The initialized Milvus client.
-        schema (CollectionSchema): The schema used for the collection.
+        main_schema (CollectionSchema): The schema used for the main collection.
+        metadata_schema (CollectionSchema): The schema used for the metadata collection.
     """
 
     DEFAULT_COLLECTION_NAME = "paperchat_docs"
+    METADATA_COLLECTION_NAME = "paperchat_metadata"
     VECTOR_DB_DIR = str(Path.home() / ".paperchat" / "paperchat.db")
 
-    def __init__(self):
+    def __init__(self, db_path: str = VECTOR_DB_DIR):
         """
-        Initializes the MilvusVectorStore, connects to Milvus, and ensures
-        the specified collection and index exist.
-
+        Initializes the VectorStore, connects to Milvus, and ensures
+        both the main document and metadata collections and their indices exist.
         """
-        self.db_path = self.VECTOR_DB_DIR
+        self.db_path = db_path
         self.collection_name = self.DEFAULT_COLLECTION_NAME
+        self.metadata_collection_name = self.METADATA_COLLECTION_NAME
         # TODO: allow passing in different embedding functions
         self._embed_fn = model.DefaultEmbeddingFunction()
         self.embedding_dim = getattr(self._embed_fn, "dim", 768)
-        self.logger = get_component_logger(f"MilvusVectorStore[{self.collection_name}]")
+        self.logger = get_component_logger("VectorStore")
+
         try:
             self.client = MilvusClient(uri=self.db_path)
+            self.logger.info(f"Connected to Milvus: {self.db_path}")
         except Exception as e:
             self.logger.exception(f"Failed to initialize MilvusClient: {e}")
             raise
 
-        self.schema = self._define_schema()
-        self.get_or_create_collection()
-        self.build_index()
+        self.main_schema = self._define_main_schema()
+        self.metadata_schema = self._define_metadata_schema()
+        self._get_or_create_collection(self.collection_name, self.main_schema)
+        self._get_or_create_collection(self.metadata_collection_name, self.metadata_schema)
+        self._build_indices()
 
-    def _define_schema(self) -> CollectionSchema:
-        """Defines the Milvus collection schema."""
+    def add_document(self, pdf_path: str | Path, max_tokens: int = 1024) -> bool:
+        """
+        Processes a PDF document, adds chunks to the main collection,
+        and adds metadata to the metadata collection. Skips if the document
+        (based on source) already exists in the metadata collection.
+
+        Args:
+            pdf_path: Path to the PDF file.
+            max_tokens: Maximum number of tokens per chunk.
+
+        Returns:
+            True if the document was successfully processed and added (or already existed),
+            False if an error occurred during processing or insertion.
+        """
+        pdf_file = Path(pdf_path)
+        source_id = pdf_file.stem
+        self.logger.info(f"Processing request for document: {pdf_file.name} (ID: {source_id})")
+
+        try:
+            # 1. check metadata existence
+            existing = self.client.query(
+                collection_name=self.metadata_collection_name,
+                filter=f'source == "{source_id}"',
+                output_fields=["source"],
+                limit=1,
+            )
+
+            if existing:
+                self.logger.info(f"Document ID '{source_id}' already exists in metadata. Skipping.")
+                return True
+
+            # 2. process pdf into chunks (if new)
+            self.logger.info(f"Document ID '{source_id}' not found. Processing PDF...")
+            pdf_data = process_pdf_document(
+                pdf_path, embed_fn=self._embed_fn, max_tokens_per_chunk=max_tokens
+            )
+
+            for chunk in pdf_data:
+                chunk["source"] = source_id
+
+            # 3. insert chunks into main collection
+            self.logger.info(f"Inserting {len(pdf_data)} chunks into '{self.collection_name}'")
+            chunk_result = self.client.insert(collection_name=self.collection_name, data=pdf_data)
+            insert_count = chunk_result.get("insert_count", 0)
+            if insert_count != len(pdf_data):
+                self.logger.error(
+                    f"Mismatch in chunk insertion count for {source_id}. Expected {len(pdf_data)}, got {insert_count}. IDs: {chunk_result.get('primary_keys')}"
+                )
+                # Decide on rollback or error state? For now, log error and continue to metadata attempt, but return False later.
+                # Consider deleting inserted chunks if possible? client.delete might be complex with specific IDs.
+                return False
+
+            self.logger.info(f"Successfully inserted {insert_count} chunks for {source_id}")
+
+            # 4. insert metadata entry
+            iso_timestamp = datetime.now().isoformat()
+            metadata_entry = [
+                {
+                    "source": source_id,
+                    "original_filename": pdf_file.name,
+                    "date_added": iso_timestamp,
+                }
+            ]
+            self.logger.info(
+                f"Inserting metadata for '{source_id}' into '{self.metadata_collection_name}'"
+            )
+            meta_result = self.client.insert(
+                collection_name=self.metadata_collection_name, data=metadata_entry
+            )
+            meta_insert_count = meta_result.get("insert_count", 0)
+
+            if meta_insert_count != 1:
+                self.logger.error(
+                    f"Failed to insert metadata for {source_id}. Result: {meta_result}"
+                )
+                return False
+
+            self.logger.info(f"Successfully added document '{source_id}'")
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"Failed processing/adding document {source_id}: {e}")
+            return False
+
+    def retrieve(
+        self,
+        query_text: str,
+        top_k: int = DEFAULT_SIMILARITY_TOP_K,
+        threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+        output_fields: list[str] | None = None,
+        filter_expression: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Searches the main collection for text chunks similar to the query text.
+
+        Args:
+            query_text: The text to search for.
+            top_k: The maximum number of results to return.
+            threshold: The minimum similarity score to return.
+            output_fields: List of field names to include in the results.
+                           Defaults to main schema fields except embedding.
+            filter_expression: Milvus filter expression string (e.g., "source == 'doc1.pdf'").
+
+        Returns:
+            Raw search results from Milvus.
+        """
+        if output_fields is None:
+            # default: all schema fields except embedding
+            output_fields = [f.name for f in self.main_schema.fields if f.name != "embedding"]
+
+        try:
+            self.logger.debug(f"Loading collection '{self.collection_name}' for search.")
+            query_embedding = self._embed_fn.encode_queries([query_text])[0]
+        except Exception as e:
+            self.logger.exception(f"Failed to generate query embedding or load collection: {e}")
+            return []
+
+        search_params = {
+            "nprobe": 10,
+            "metric_type": "COSINE",
+            "radius": threshold,
+            "range_filter": 1.0,
+        }
+
+        try:
+            results = self.client.search(
+                collection_name=self.collection_name,
+                data=[query_embedding],
+                search_params=search_params,
+                limit=top_k,
+                output_fields=output_fields,
+                filter=filter_expression,
+            )
+        except Exception as e:
+            self.logger.exception(f"Search failed: {e}")
+            results = []
+
+        return results
+
+    def list_documents(self) -> list[dict[str, Any]]:
+        """
+        Lists all documents by querying the metadata collection.
+
+        Returns:
+            A list of dictionaries, each containing metadata for one document
+            (source, original_filename, date_added).
+            Returns an empty list if there are no documents or an error occurs.
+        """
+        self.logger.debug(f"Listing documents from '{self.metadata_collection_name}'")
+        try:
+            results = self.client.query(
+                collection_name=self.metadata_collection_name,
+                output_fields=["source", "original_filename", "date_added"],
+                limit=100,
+            )
+            self.logger.info(f"Found {len(results)} documents in metadata.")
+            return results
+        except Exception as e:
+            self.logger.exception(f"Failed to list documents from metadata: {e}")
+            return []
+
+    def remove_document(self, source_id: str) -> tuple[int, int]:
+        """
+        Removes a document and its associated data from both the metadata
+        and main document collections based on the source identifier.
+
+        Args:
+            source_id: The unique identifier (e.g., file stem) of the document to delete.
+
+        Returns:
+            A tuple containing:
+            (number of metadata entries deleted, number of chunks deleted).
+            Typically (1, N) on success, (0, 0) if not found, or potentially
+            (0, N) or (1, 0) if deletion from one collection fails.
+        """
+        self.logger.info(f"Attempting to remove document with ID: '{source_id}'")
+        metadata_deleted_count = 0
+        chunks_deleted_count = 0
+
+        # step 1: remove from metadata
+        try:
+            self.logger.debug(
+                f"Removing metadata entry for '{source_id}' from '{self.metadata_collection_name}'"
+            )
+            meta_del_result = self.client.delete(
+                collection_name=self.metadata_collection_name,
+                filter=f'source == "{source_id}"',
+            )
+            if hasattr(meta_del_result, "delete_count"):
+                metadata_deleted_count = meta_del_result.delete_count
+            elif hasattr(meta_del_result, "primary_keys"):
+                metadata_deleted_count = len(meta_del_result.primary_keys)
+            else:
+                metadata_deleted_count = 1 if meta_del_result else 0
+
+            self.logger.info(
+                f"Removed {metadata_deleted_count} entries from metadata for '{source_id}'"
+            )
+        except Exception as e:
+            self.logger.exception(
+                f"Failed to remove from metadata collection for '{source_id}': {e}"
+            )
+
+        # step 2: remove from main collection
+        try:
+            self.logger.debug(f"Removing chunks for '{source_id}' from '{self.collection_name}'")
+            chunk_del_result = self.client.delete(
+                collection_name=self.collection_name,
+                filter=f'source == "{source_id}"',
+            )
+            if hasattr(chunk_del_result, "delete_count"):
+                chunks_deleted_count = chunk_del_result.delete_count
+            elif hasattr(chunk_del_result, "primary_keys"):
+                chunks_deleted_count = len(chunk_del_result.primary_keys)
+            else:
+                chunks_deleted_count = 0
+
+            self.logger.info(
+                f"Removed {chunks_deleted_count} chunks from main collection for '{source_id}'"
+            )
+        except Exception as e:
+            self.logger.exception(
+                f"Failed to remove chunks from main collection for '{source_id}': {e}"
+            )
+
+        self.logger.info(
+            f"Removal complete for '{source_id}'. Metadata removed: {metadata_deleted_count}, Chunks removed: {chunks_deleted_count}"
+        )
+        return metadata_deleted_count, chunks_deleted_count
+
+    def _define_main_schema(self) -> CollectionSchema:
+        """Defines the Milvus collection schema for document chunks."""
         fields = [
             FieldSchema(name="pk", dtype=DataType.INT64, is_primary=True, auto_id=True),
             FieldSchema(
@@ -82,31 +320,60 @@ class VectorStore:
                 name="source",
                 dtype=DataType.VARCHAR,
                 max_length=512,
-                description="Source document filename",
+                description="Source document filename stem (e.g., pdf_file.stem)",
             ),
         ]
-
         return CollectionSchema(
             fields, description="Document Chunks Collection", enable_dynamic_field=True
         )
 
-    def get_or_create_collection(self) -> None:
-        """Creates the collection if it doesn't exist."""
-        try:
-            collection_exists = self.client.has_collection(self.collection_name)
-            if not collection_exists:
-                self.logger.info(f"Creating collection '{self.collection_name}'")
-                self.client.create_collection(
-                    collection_name=self.collection_name, schema=self.schema
-                )
+    def _define_metadata_schema(self) -> CollectionSchema:
+        """Defines the Milvus collection schema for document metadata."""
+        fields = [
+            FieldSchema(name="pk", dtype=DataType.INT64, is_primary=True, auto_id=True),
+            FieldSchema(
+                name="source",
+                dtype=DataType.VARCHAR,
+                max_length=512,
+                description="Unique source identifier/filename stem (e.g., pdf_file.stem)",
+            ),
+            FieldSchema(
+                name="original_filename",
+                dtype=DataType.VARCHAR,
+                max_length=1024,
+                description="Original filename of the source document",
+            ),
+            FieldSchema(
+                name="date_added",
+                dtype=DataType.VARCHAR,
+                max_length=64,
+                description="ISO 8601 timestamp when the document was added",
+            ),
+        ]
+        return CollectionSchema(
+            fields, description="Document Metadata Collection", enable_dynamic_field=False
+        )
 
+    def _get_or_create_collection(self, collection_name: str, schema: CollectionSchema) -> None:
+        """Creates the specified collection if it doesn't exist."""
+        try:
+            collection_exists = self.client.has_collection(collection_name)
+            if not collection_exists:
+                self.logger.info(f"Creating collection '{collection_name}'")
+                self.client.create_collection(collection_name=collection_name, schema=schema)
+            else:
+                self.logger.info(f"Collection '{collection_name}' already exists.")
         except Exception as e:
-            self.logger.exception(f"Failed to create collection: {e}")
+            self.logger.exception(f"Failed to check/create collection '{collection_name}': {e}")
             raise
 
-    def build_index(self) -> None:
-        """Creates a vector index on the embedding field."""
+    def _build_indices(self) -> None:
+        """Creates indices for both main and metadata collections if they don't exist."""
+        # vector db index
         try:
+            self.logger.info(
+                f"Ensuring vector index exists on 'embedding' for '{self.collection_name}'"
+            )
             index_params = self.client.prepare_index_params()
             index_params.add_index(
                 field_name="embedding",
@@ -114,118 +381,26 @@ class VectorStore:
                 metric_type="COSINE",
                 params={"nlist": 128},
             )
-
             self.client.create_index(
-                collection_name=self.collection_name,
-                index_params=index_params,
+                collection_name=self.collection_name, index_params=index_params
             )
+            self.logger.info(f"Vector index ensured for '{self.collection_name}'")
         except Exception as e:
-            self.logger.warning(f"Could not create index: {e}")
+            self.logger.warning(f"Could not ensure vector index for '{self.collection_name}': {e}")
 
-    def add_document(self, pdf_path: str | Path, max_tokens: int = 1024) -> bool:
-        """
-        Processes a PDF document, extracts chunks, generates embeddings,
-        and inserts them into the Milvus collection. Automatically skips
-        documents that have already been inserted.
-
-        Args:
-            pdf_path: Path to the PDF file.
-            max_tokens: Maximum number of tokens per chunk
-
-        Returns:
-            True if the document was successfully processed and inserted, False otherwise
-        """
-        pdf_file = Path(pdf_path)
-        self.logger.info(f"Processing: {pdf_file.name}")
-
+        # metadata db index
+        metadata_index_field = "source"
         try:
-            # check if document already exists in the collection
-            existing = self.client.query(
-                collection_name=self.collection_name,
-                filter=f'source == "{pdf_file.stem}"',
-                output_fields=["source"],
-                limit=1,
+            metadata_index_params = self.client.prepare_index_params()
+            metadata_index_params.add_index(field_name=metadata_index_field)
+            self.logger.info(
+                f"Ensuring scalar index exists on '{metadata_index_field}' for '{self.metadata_collection_name}'"
             )
-
-            if existing:
-                self.logger.info(f"Document '{pdf_file.stem}' already exists. Skipping.")
-                return True
-
-            pdf_data = process_pdf_document(
-                pdf_path, embed_fn=self._embed_fn, max_tokens_per_chunk=max_tokens
+            self.client.create_index(
+                collection_name=self.metadata_collection_name, index_params=metadata_index_params
             )
-
-            result = self.client.insert(collection_name=self.collection_name, data=pdf_data)
-            insert_count = result.get("insert_count", 0)
-            self.logger.info(f"Successfully inserted {insert_count} chunks")
-
-            return True
-
+            self.logger.info(f"Scalar index ensured for '{self.metadata_collection_name}'")
         except Exception as e:
-            self.logger.exception(f"Failed to insert data: {e}")
-
-            return False
-
-    def retrieve(
-        self,
-        query_text: str,
-        top_k: int = DEFAULT_SIMILARITY_TOP_K,
-        threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
-        output_fields: list[str] | None = None,
-        filter_expression: str | None = None,  # For metadata filtering later
-    ) -> list[dict[str, Any]]:
-        """
-        Searches the collection for text chunks similar to the query text.
-
-        Args:
-            query_text: The text to search for.
-            top_k: The maximum number of results to return.
-            threshold: The minimum similarity score to return.
-            output_fields: List of field names to include in the results.
-                           Defaults to schema fields plus similarity/distance.
-            filter_expression: Milvus filter expression string (e.g., "source == 'doc1.pdf'").
-
-        Returns:
-            Raw search results from Milvus
-        """
-        if output_fields is None:
-            # default: all schema fields except embedding
-            output_fields = [f.name for f in self.schema.fields if f.name != "embedding"]
-
-        try:
-            self.logger.debug(f"Loading collection '{self.collection_name}' for search.")
-            self.client.load_collection(self.collection_name)
-            query_embedding = self._embed_fn.encode_queries([query_text])[0]
-        except Exception as e:
-            self.logger.exception(f"Failed to generate query embedding or load collection: {e}")
-            return []
-
-        ########################################################################
-        # radius and range_filter are used to filter results by distance
-        # radius is boundary furthest from "ideal"
-        # range_filter is boundary closest to "ideal"
-        # for COSINE: radius <= similarity <= range_filter
-        # for L2: radius >= similarity >= range_filter
-        ########################################################################
-        search_params = {
-            "nprobe": 10,
-            "metric_type": "COSINE",
-            "radius": threshold,
-            "range_filter": 1.0,
-        }
-
-        try:
-            results = self.client.search(
-                collection_name=self.collection_name,
-                data=[query_embedding],
-                search_params=search_params,
-                limit=top_k,
-                output_fields=output_fields,
-                filter=filter_expression,
+            self.logger.warning(
+                f"Could not ensure scalar index for '{self.metadata_collection_name}': {e}"
             )
-
-        except Exception as e:
-            self.logger.exception(f"Search failed: {e}")
-            results = []
-
-        return results
