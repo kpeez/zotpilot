@@ -48,16 +48,20 @@ def test_retrieve(rag_pipeline, mock_vector_store):
     """Test the retrieve method."""
     query = "test query"
     top_k = 3
+    threshold = 0.8
     filter_expression = "source == 'test.pdf'"
 
-    mock_results = [{"text": "test result"}]
-    mock_vector_store.retrieve.return_value = mock_results
+    mock_inner_results = [{"text": "test result"}]
+    mock_vector_store.search.return_value = mock_inner_results
 
-    results = rag_pipeline.retrieve(query, top_k, filter_expression)
+    results = rag_pipeline.retrieve(query, top_k, threshold, filter_expression)
 
-    assert results == mock_results
-    mock_vector_store.retrieve.assert_called_once_with(
-        query_text=query, top_k=top_k, filter_expression=filter_expression
+    assert results == mock_inner_results
+    mock_vector_store.search.assert_called_once_with(
+        query_text=query,
+        top_k=top_k,
+        threshold=threshold,
+        filter_expression=filter_expression,
     )
 
 
