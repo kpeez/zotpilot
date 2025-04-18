@@ -27,13 +27,28 @@ def add_api_table_css() -> None:
     st.markdown(
         """
     <style>
-    /* Code block styling for masked keys */
-    pre {
+    /* Default (light mode) code block styling for masked keys */
+    /* Applied directly to the pre element used by st.code */
+    .stCodeBlock pre {
         padding: 0.5rem !important;
-        background-color: #f0f0f0 !important;
+        background-color: #f0f0f0 !important; /* Light background */
+        color: #000000 !important; /* Black text */
         border-radius: 4px !important;
         margin: 0 !important;
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace !important;
+        font-size: 0.9em !important;
+        line-height: 1.2 !important;
     }
+
+    /* Dark mode override for the masked key code blocks */
+    @media (prefers-color-scheme: dark) {
+        .stCodeBlock pre {
+            background-color: #262730 !important; /* Dark background */
+            color: #ffffff !important; /* White text */
+            /* Inherits padding, border-radius, margin, font */
+        }
+    }
+
     .stDivider {
         margin-top: 0.5rem !important;
         margin-bottom: 0.5rem !important;
