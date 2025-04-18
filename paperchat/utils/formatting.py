@@ -35,7 +35,7 @@ def process_citations(
     Processes citations in the raw LLM response to use sequential footnote-style
     references and filters chunks to only include cited ones.
 
-    Finds citations like (Chunk 1, Page 5) or (Source 3, Page 10), replaces them
+    Finds citations like "Chunk 1", "(see CHUNK 1)", "(Chunks 1, 2)", etc., replaces them
     with sequential markers like [1], [2], etc., based on the order of appearance,
     and returns the processed response and the list of corresponding cited chunks
     in the correct order.
@@ -50,35 +50,36 @@ def process_citations(
             - A list of chunk dictionaries that were actually cited, ordered
               by their citation number.
     """
-    # updated pattern to match variations like "(see CHUNK 1)", "(CHUNK 1, 2)", "(described in CHUNK 1 and 3)", etc.
-    citation_pattern = re.compile(
-        r"\((?:.*?)\bCHUNK\s+(\d+(?:(?:\s+and\s+|\s*,\s*)\d+)*)\)", re.IGNORECASE
-    )
+    # captures the chunk type (group 1) and the number list (group 2).
+    citation_pattern = re.compile(r"\b(Chunks?)\s+(\d+(?:\s*(?:,|and)\s*\d+)*)\b", re.IGNORECASE)
 
     cited_chunk_indices: list[int] = []
-    # map original chunk index -> citation number [1], [2]...
-    unique_citations: dict[int, int] = {}
-    # map full citation string -> footnote string e.g. "(see CHUNK 1)" -> "[1]"
-    citation_map: dict[str, str] = {}
+    unique_citations: dict[int, int] = {}  # map original chunk index -> citation number [1], [2]...
+    processed_parts: list[str] = []
+    last_end = 0
 
-    def replace_citation(match: re.Match) -> str:
-        # get the full matched string, e.g., "(described in CHUNK 1 and 3)"
-        full_match = match.group(0)
-        # get the numbers string, e.g., "1 and 3"
-        chunk_nums_str = match.group(1)
-        # split potentially multiple numbers like "1 and 3" or "1, 2"
+    for match in citation_pattern.finditer(raw_response):
+        start, end = match.span()
+        processed_parts.append(raw_response[last_end:start])
+        chunk_nums_str = match.group(2)
         chunk_indices_0_based = []
         try:
-            # use regex split for robustness with spacing around "and" or ","
-            indices_1_based = [int(n.strip()) for n in re.split(r"\s+(?:and|,)\s*", chunk_nums_str)]
+            # use more robust split logic allowing flexible spacing
+            indices_1_based = [int(n.strip()) for n in re.split(r"\s*(?:and|,)\s*", chunk_nums_str)]
             chunk_indices_0_based = [idx - 1 for idx in indices_1_based]
         except ValueError:
-            # if number parsing fails, return the original string
-            return full_match
+            # if number parsing fails, append the original matched text and skip
+            processed_parts.append(match.group(0))
+            last_end = end
+            continue
 
+        # validate chunk indices
         if not all(0 <= idx < len(retrieved_chunks) for idx in chunk_indices_0_based):
-            return full_match
+            processed_parts.append(match.group(0))  # append original if invalid index
+            last_end = end
+            continue
 
+        # generate citation numbers and update tracking
         citation_numbers_for_this_match = []
         for original_chunk_index in chunk_indices_0_based:
             if original_chunk_index not in unique_citations:
@@ -90,14 +91,18 @@ def process_citations(
                 citation_numbers_for_this_match.append(str(unique_citations[original_chunk_index]))
 
         citation_numbers_for_this_match.sort(key=int)
-        # create the replacement string, e.g., "[1]" or "[1, 2]"
+        # create the replacement footnote string, e.g., "[1]" or "[1, 2]"
         replacement_string = f"[{', '.join(citation_numbers_for_this_match)}]"
-        citation_map[full_match] = replacement_string
+        processed_parts.append(replacement_string)
 
-        return replacement_string
+        last_end = end
 
-    processed_response = citation_pattern.sub(replace_citation, raw_response)
+    # append any remaining text after the last match
+    processed_parts.append(raw_response[last_end:])
 
+    processed_response = "".join(processed_parts)
+
+    # ensure cited chunks are ordered by their *first* appearance (citation number)
     cited_chunks_ordered = [
         retrieved_chunks[i] for i in cited_chunk_indices if 0 <= i < len(retrieved_chunks)
     ]
