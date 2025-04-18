@@ -2,7 +2,6 @@
 Chat interface UI components for Streamlit.
 """
 
-from pathlib import Path
 from typing import Generator
 
 import streamlit as st
@@ -58,20 +57,25 @@ def render_api_key_setup() -> None:
 
 
 def _get_retrieval_filter() -> str | None:
-    """Determine the Milvus filter expression based on the active document."""
-    active_hash = st.session_state.active_document_hash
+    """Determine the Milvus filter expression based on selected documents."""
+    selected_docs = st.session_state.get("selected_documents")
     filter_expression = None
-    if active_hash:
-        filename = st.session_state.filenames.get(active_hash)
-        if filename:
-            filename_stem = Path(filename).stem
-            filter_expression = f'source == "{filename_stem}"'
-        else:
-            st.warning(
-                f"Filename not found for hash {active_hash}. Chatting without document context."
-            )
+
+    if not selected_docs:
+        st.info("ℹ️ No specific documents selected. Searching across the entire knowledge base.")
+        return None
+
+    # build the filter basd on list items
+    if isinstance(selected_docs, list) and len(selected_docs) > 0:
+        # construct a Milvus 'in' filter expression
+        # e.g., source in ["doc1", "doc2"]
+        formatted_sources = [f'"{doc_name}"' for doc_name in selected_docs]
+        filter_expression = f"source in [{', '.join(formatted_sources)}]"
     else:
-        st.info("No document selected. Chatting without document context.")
+        st.warning("Selected documents state is invalid. Searching across all documents.")
+        # fallback to searching all if state is weird
+        filter_expression = None
+
     return filter_expression
 
 
@@ -129,14 +133,6 @@ def render_chat_interface() -> None:
                         st.markdown(msg["content"])
 
     chat_input_placeholder = "Ask a question..."
-    if (
-        st.session_state.active_document_hash
-        and st.session_state.active_document_hash in st.session_state.filenames
-    ):
-        chat_input_placeholder = (
-            f"Ask about {st.session_state.filenames[st.session_state.active_document_hash]}"
-        )
-
     user_query = st.chat_input(chat_input_placeholder)
 
     if user_query:
@@ -190,18 +186,24 @@ def render_chat_interface() -> None:
 
 def render_main_content() -> None:
     """Render the main content area with chat or welcome screen."""
-    if not st.session_state.filenames:
+    selected_docs = st.session_state.get("selected_documents")
+
+    if selected_docs and isinstance(selected_docs, list) and len(selected_docs) > 0:
+        render_chat_interface()
+    elif selected_docs is not None and isinstance(selected_docs, list) and len(selected_docs) == 0:
+        st.info(
+            "Please select one or more documents from the 'Select Chat Context' dropdown in the sidebar to begin chatting."
+        )
+    else:
+        # this branch covers cases where selected_documents hasn't been initialized yet
+        # (e.g., on first run or if pipeline failed)
         st.markdown("""
         ### 👋 Welcome to PaperChat!
 
         To get started:
         1. Upload one or more PDFs using the sidebar
-        2. Select the document you want to chat with
+        2. Select the document(s) you want to chat with
         3. Ask questions about the document content
 
-        PaperChat will use AI to retrieve relevant information and provide answers based on the selected document.
+        PaperChat will use AI to retrieve relevant information and provide answers based on the selected document(s).
         """)
-    elif st.session_state.active_document_hash is None and st.session_state.filenames:
-        st.info("Please select a document from the sidebar to start chatting.")
-    else:
-        render_chat_interface()
