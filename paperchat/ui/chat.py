@@ -2,6 +2,9 @@
 Chat interface UI components for Streamlit.
 """
 
+from pathlib import Path
+from typing import Generator
+
 import streamlit as st
 
 from ..utils.formatting import (
@@ -54,6 +57,59 @@ def render_api_key_setup() -> None:
         st.rerun()
 
 
+def _get_retrieval_filter() -> str | None:
+    """Determine the Milvus filter expression based on the active document."""
+    active_hash = st.session_state.active_document_hash
+    filter_expression = None
+    if active_hash:
+        filename = st.session_state.filenames.get(active_hash)
+        if filename:
+            filename_stem = Path(filename).stem
+            filter_expression = f'source == "{filename_stem}"'
+        else:
+            st.warning(
+                f"Filename not found for hash {active_hash}. Chatting without document context."
+            )
+    else:
+        st.info("No document selected. Chatting without document context.")
+    return filter_expression
+
+
+def _handle_rag_query(
+    user_query: str, filter_expression: str | None, top_k: int
+) -> tuple[Generator[str, None, None], list] | tuple[None, None]:
+    """
+    Execute RAG pipeline: retrieve chunks and return generator stream + retrieved chunks.
+
+    Args:
+        user_query: The user's query string.
+        filter_expression: Milvus filter expression for retrieval.
+        top_k: Number of chunks to retrieve.
+
+    Returns:
+        A tuple containing the LLM response generator and the list of retrieved chunks,
+        or (None, None) if an error occurs.
+    """
+    try:
+        rag_pipeline = st.session_state.rag_pipeline
+
+        retrieved_chunks = rag_pipeline.retrieve(
+            query=user_query, top_k=top_k, filter_expression=filter_expression
+        )
+
+        llm_response_stream = rag_pipeline.generate(
+            query=user_query,
+            retrieved_results=retrieved_chunks,
+            stream=True,
+        )
+        return llm_response_stream, retrieved_chunks
+
+    except Exception as e:
+        error_message = f"Sorry, I encountered an error: {e!s}"
+        st.error(error_message)
+        return None, None
+
+
 def render_chat_interface() -> None:
     """Render the chat interface."""
     chat_container = st.container()
@@ -63,7 +119,8 @@ def render_chat_interface() -> None:
             for msg in st.session_state.messages:
                 with st.chat_message(msg["role"]):
                     if msg["role"] == "assistant":
-                        st.markdown(msg["content"], unsafe_allow_html=True)
+                        formatted_content = format_response_with_citations(msg["content"])
+                        st.markdown(formatted_content, unsafe_allow_html=True)
                         if msg.get("sources"):
                             with st.expander("📚 Sources", expanded=False):
                                 sources_md = format_retrieved_chunks_for_display(msg["sources"])
@@ -71,78 +128,69 @@ def render_chat_interface() -> None:
                     else:
                         st.markdown(msg["content"])
 
-    user_query = st.chat_input(
-        f"Ask a question about {st.session_state.filenames[st.session_state.active_document_hash]}"
-    )
+    chat_input_placeholder = "Ask a question..."
+    if (
+        st.session_state.active_document_hash
+        and st.session_state.active_document_hash in st.session_state.filenames
+    ):
+        chat_input_placeholder = (
+            f"Ask about {st.session_state.filenames[st.session_state.active_document_hash]}"
+        )
+
+    user_query = st.chat_input(chat_input_placeholder)
 
     if user_query:
         st.session_state.messages.append({"role": "user", "content": user_query})
-
         with st.chat_message("user"):
             st.markdown(user_query)
 
-        response_placeholder = st.empty()
+        with st.chat_message("assistant"):
+            response_placeholder = st.empty()
+            response_placeholder.markdown("Thinking...▌")
 
-        with st.spinner("Generating response..."):
-            try:
-                # Ensure the model state is up to date with the current configuration
-                check_model_config_changes()
+            check_model_config_changes()
+            top_k = st.session_state.config.get("top_k", 5)
 
-                active_doc_data = st.session_state.processed_documents[
-                    st.session_state.active_document_hash
-                ]
-                config = st.session_state.config
-                rag_pipeline = st.session_state.rag_pipeline
+            filter_expression = _get_retrieval_filter()
+            llm_response_stream, retrieved_chunks = _handle_rag_query(
+                user_query, filter_expression, top_k
+            )
 
-                # Use top_k from config, defaulting to 5 if not present
-                top_k = config.get("top_k", 5)
-
-                # Use the RAGPipeline's run method to get response and retrieved chunks
-                llm_response, retrieved_chunks = rag_pipeline.run(
-                    query=user_query,
-                    document_data=active_doc_data,
-                    top_k=top_k,
-                    stream=False,
-                )
+            if llm_response_stream and retrieved_chunks is not None:
+                full_response = response_placeholder.write_stream(llm_response_stream)
 
                 processed_response, cited_chunks_filtered = process_citations(
-                    llm_response, retrieved_chunks
+                    full_response, retrieved_chunks
                 )
 
-                formatted_response_html = format_response_with_citations(processed_response)
+                formatted_final_content = format_response_with_citations(processed_response)
+                response_placeholder.markdown(formatted_final_content, unsafe_allow_html=True)
 
+                message_data = {
+                    "role": "assistant",
+                    "content": processed_response,
+                    "sources": cited_chunks_filtered,
+                }
+                st.session_state.messages.append(message_data)
+
+                if cited_chunks_filtered:
+                    with st.expander("📚 Sources", expanded=False):
+                        sources_md = format_retrieved_chunks_for_display(cited_chunks_filtered)
+                        st.markdown(sources_md, unsafe_allow_html=True)
+            else:
+                response_placeholder.error("An error occurred while processing your request.")
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
-                        "content": formatted_response_html,
-                        "raw_content": llm_response,
-                        "sources": cited_chunks_filtered,
+                        "content": "Sorry, I couldn't process your request due to an error.",
+                        "sources": [],
                     }
                 )
-
-                with response_placeholder.chat_message("assistant"):
-                    st.markdown(formatted_response_html, unsafe_allow_html=True)
-
-                    if cited_chunks_filtered:
-                        with st.expander("📚 Sources", expanded=False):
-                            sources_md = format_retrieved_chunks_for_display(cited_chunks_filtered)
-                            st.markdown(sources_md, unsafe_allow_html=True)
-
-            except Exception as e:
-                error_message = f"Error: {e!s}"
-                st.error(error_message)
-
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": error_message, "sources": []}
-                )
-
-                with response_placeholder.chat_message("assistant"):
-                    st.error(error_message)
 
 
 def render_main_content() -> None:
     """Render the main content area with chat or welcome screen."""
-    if not st.session_state.processed_documents:
+    if not st.session_state.filenames:
         st.markdown("""
         ### 👋 Welcome to PaperChat!
 
@@ -153,7 +201,7 @@ def render_main_content() -> None:
 
         PaperChat will use AI to retrieve relevant information and provide answers based on the selected document.
         """)
-    elif st.session_state.active_document_hash is None and st.session_state.processed_documents:
+    elif st.session_state.active_document_hash is None and st.session_state.filenames:
         st.info("Please select a document from the sidebar to start chatting.")
     else:
         render_chat_interface()
