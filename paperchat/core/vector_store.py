@@ -69,7 +69,7 @@ class VectorStore:
         self._get_or_create_collection(self.metadata_collection_name, self.metadata_schema)
         self._build_indices()
 
-    def add_document(self, pdf_path: str | Path, max_tokens: int = 1024) -> bool:
+    def add_document(self, pdf_path: str | Path, source_id: str, max_tokens: int = 1024) -> bool:
         """
         Processes a PDF document, adds chunks to the main collection,
         and adds metadata to the metadata collection. Skips if the document
@@ -77,6 +77,7 @@ class VectorStore:
 
         Args:
             pdf_path: Path to the PDF file.
+            source_id: The unique identifier (e.g., original filename stem) for this document.
             max_tokens: Maximum number of tokens per chunk.
 
         Returns:
@@ -84,7 +85,6 @@ class VectorStore:
             False if an error occurred during processing or insertion.
         """
         pdf_file = Path(pdf_path)
-        source_id = pdf_file.stem
         self.logger.info(f"Processing request for document: {pdf_file.name} (ID: {source_id})")
 
         try:

@@ -11,8 +11,8 @@ import keyring.errors
 _KEYRING_SERVICE_NAME: Final[str] = "paperchat"
 _PROVIDER_CONFIG: Final[dict[str, dict[str, str | None]]] = {
     "openai": {"env_var": "OPENAI_API_KEY", "prefix": "sk-", "name": "OpenAI"},
-    "anthropic": {"env_var": "ANTHROPIC_API_KEY", "prefix": "sk-ant-", "name": "Anthropic"},
     "gemini": {"env_var": "GEMINI_API_KEY", "prefix": None, "name": "Gemini"},
+    "anthropic": {"env_var": "ANTHROPIC_API_KEY", "prefix": "sk-ant-", "name": "Anthropic"},
 }
 
 

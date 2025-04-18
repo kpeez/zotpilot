@@ -98,6 +98,49 @@ def set_css_styles() -> None:
             margin-bottom: 1rem;
             border-radius: 8px;
         }
+
+        /* Citation marker styling */
+        .citation-marker {
+            display: inline-block;
+            background-color: #e6f3ff; /* Light blue background */
+            color: #000000; /* Black text */
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin: 0 2px;
+            line-height: 1.2;
+            vertical-align: baseline;
+        }
+
+        /* Dark mode specific citation styling */
+        @media (prefers-color-scheme: dark) {
+            .stChatMessage pre {
+                background-color: #262730 !important; /* Darker code blocks */
+            }
+            .citations-table th, .citations-table td {
+                border: 1px solid #3c3f44;
+            }
+            .citations-table th {
+                background-color: #262730;
+            }
+
+            .citation-marker {
+                background-color: transparent; /* No background in dark mode */
+                color: #a8d4ff; /* Light blue text for dark mode */
+            }
+
+            /* Style for password input in dark mode - using specific selector + !important */
+            div[data-testid="stTextInput"] input[type="password"] {
+                color: #ffffff !important;
+                background-color: #262730 !important;
+                border: 1px solid #4a4a4a !important;
+            }
+            /* Ensure placeholder text is visible too */
+            div[data-testid="stTextInput"] input[type="password"]::placeholder {
+                color: #888888 !important;
+            }
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -115,10 +158,7 @@ def refresh_model_state() -> None:
     api_key = get_api_key(provider_name)
 
     st.session_state.llm_manager = LLMManager(config=st.session_state.config, api_key=api_key)
-    st.session_state.rag_pipeline = RAGPipeline(
-        llm_manager=st.session_state.llm_manager,
-        embedding_model=st.session_state.embedding_model,
-    )
+    st.session_state.rag_pipeline = RAGPipeline(llm_manager=st.session_state.llm_manager)
 
     if "previous_config" not in st.session_state:
         st.session_state.previous_config = {}
@@ -143,7 +183,6 @@ def check_model_config_changes() -> bool:
 
     prev_config = st.session_state.previous_config
     current_config = st.session_state.config
-    # check for change in config
     if prev_config.get("provider_name") != current_config.get("provider_name") or prev_config.get(
         "model_id"
     ) != current_config.get("model_id"):

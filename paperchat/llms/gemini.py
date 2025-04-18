@@ -18,8 +18,10 @@ class GeminiAdapter:
     def list_models(client: Any | None = None) -> list[dict[str, Any]]:
         """List available models from Gemini."""
         return [
-            {"id": "gemini-2.5-pro-preview-03-25"},
+            {"id": "gemini-2.5-pro-exp-03-25"},
+            {"id": "gemini-2.5-flash-preview-04-17"},
             {"id": "gemini-2.0-flash"},
+            {"id": "gemini-2.5-pro-preview-03-25"},
         ]
 
     @staticmethod
