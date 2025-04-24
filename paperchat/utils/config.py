@@ -2,9 +2,7 @@ import torch
 
 from .api_keys import get_api_key
 
-# Text extraction and embedding
-
-EMBEDDING_MODEL = "gemini-embedding-exp-03-07" if get_api_key("gemini") else "all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 DEVICE = "auto"
 
 
@@ -26,7 +24,6 @@ DEFAULT_MODEL = "gemini-2.0-flash" if get_api_key("gemini") else "gpt-4.1-nano"
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_MAX_TOKENS = 1000
 
-# System prompt
 DEFAULT_SYSTEM_PROMPT = """
 You are a helpful academic research assistant helping with scientific papers.
 Act as an expert in the field of the paper you're discussing.
