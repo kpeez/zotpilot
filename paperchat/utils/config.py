@@ -4,7 +4,7 @@ from .api_keys import get_api_key
 
 # Text extraction and embedding
 
-EMBEDDING_MODEL = "models/text-embedding-004" if get_api_key("gemini") else "all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "gemini-embedding-exp-03-07" if get_api_key("gemini") else "all-MiniLM-L6-v2"
 DEVICE = "auto"
 
 
