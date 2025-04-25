@@ -6,7 +6,10 @@ from typing import Callable
 
 import streamlit as st
 
-from paperchat.ui.api_settings import render_api_key_manager
+from paperchat.core.embeddings import (
+    PROVIDERS_REQUIRING_KEYS,
+    list_embedding_models,
+)
 from paperchat.ui.common import render_page_header
 from paperchat.utils.api_keys import (
     get_api_key,
@@ -16,8 +19,9 @@ from paperchat.utils.api_keys import (
     remove_api_key,
     set_api_key,
 )
+from paperchat.utils.settings import get_active_embedding_model, set_active_embedding_model
 
-from ..llms.common import list_models
+from ..llms.common import list_llm_models
 
 
 def add_api_table_css() -> None:
@@ -85,13 +89,12 @@ def handle_api_key_popup(provider: str) -> None:
             if current_key:
                 delete = st.form_submit_button("Delete", use_container_width=True)
             else:
-                cancel = st.form_submit_button("Cancel", use_container_width=True)
+                close_popover = st.form_submit_button("Close", use_container_width=True)
 
         if save and api_key:
             success, error_msg = set_api_key(provider, api_key)
             if success:
                 st.success(f"{provider_name} API key saved successfully!")
-                st.session_state[f"show_{provider}_popup"] = False
                 st.rerun()
             else:
                 st.error(f"Failed to save API key: {error_msg}")
@@ -100,13 +103,11 @@ def handle_api_key_popup(provider: str) -> None:
             success, message = remove_api_key(provider)
             if success:
                 st.success(message)
-                st.session_state[f"show_{provider}_popup"] = False
                 st.rerun()
             else:
                 st.error(message)
 
-        if not current_key and cancel:
-            st.session_state[f"show_{provider}_popup"] = False
+        if not current_key and close_popover:
             st.rerun()
 
 
@@ -121,7 +122,7 @@ def render_model_table() -> None:
         if not get_api_key(provider):
             continue
 
-        models = list_models(provider_name=provider)
+        models = list_llm_models(provider_name=provider)
         for model in models:
             all_models.append(
                 {
@@ -135,10 +136,8 @@ def render_model_table() -> None:
         st.info("No models available. Please configure API keys first.")
         return
 
-    active_provider = st.session_state.get("active_provider", "")
-    active_model = ""
-    if active_provider in st.session_state.get("provider_settings", {}):
-        active_model = st.session_state.provider_settings[active_provider].get("model", "")
+    active_provider = st.session_state.config.get("provider_name", "")
+    active_model = st.session_state.config.get("model_id", "")
 
     col1, col2, col3 = st.columns([2, 3, 2])
     with col1:
@@ -168,24 +167,8 @@ def render_model_table() -> None:
             elif st.button(
                 "Select", key=f"select_{model_info['provider']}_{model_info['model_id']}"
             ):
-                st.session_state.active_provider = model_info["provider"]
-
-                if model_info["provider"] not in st.session_state.provider_settings:
-                    st.session_state.provider_settings[model_info["provider"]] = {
-                        "temperature": 0.7
-                    }
-
-                st.session_state.provider_settings[model_info["provider"]]["model"] = model_info[
-                    "model_id"
-                ]
-
-                update_global_settings(
-                    model_info["provider"],
-                    model_info["model_id"],
-                    st.session_state.provider_settings[model_info["provider"]].get(
-                        "temperature", 0.7
-                    ),
-                )
+                st.session_state.config["provider_name"] = model_info["provider"]
+                st.session_state.config["model_id"] = model_info["model_id"]
 
                 st.success(f"Selected {model_info['model_id']} as active model")
                 st.rerun()
@@ -232,7 +215,7 @@ def render_api_key_table() -> None:
             else:
                 st.markdown("No API Key set")
 
-        with col4, st.popover("⚙️"):
+        with col4, st.popover("⚙️", use_container_width=False):
             handle_api_key_popup(provider)
 
         st.divider()
@@ -250,7 +233,7 @@ def render_model_selector(provider: str) -> str:
     """
     st.subheader("2️⃣ Model")
 
-    models = list_models(provider_name=provider)
+    models = list_llm_models(provider_name=provider)
     model_ids = [model["id"] for model in models]
 
     if not model_ids:
@@ -283,7 +266,7 @@ def render_model_settings(provider: str) -> None:
         provider: Provider name (e.g., "openai")
     """
     provider = provider.lower()
-    models = list_models(provider_name=provider)
+    models = list_llm_models(provider_name=provider)
     model_ids = [model["id"] for model in models]
 
     if model_ids:
@@ -397,316 +380,229 @@ def update_global_settings(provider: str, model: str, temperature: float) -> Non
         )
 
 
-def render_unified_model_settings() -> None:
-    """
-    Render a unified model settings panel with provider and model selection.
+def _render_llm_settings_form_section() -> tuple[str | None, str | None, float]:
+    """Renders the LLM provider, model, and temperature selectors."""
+    st.markdown("### LLM Configuration")
+    available_llm_providers = get_available_providers()
+    selected_model_id = None
+    selected_temperature = 0.7
 
-    This creates a single UI component with three sections:
-    1. Provider selection (radio buttons)
-    2. Model selection based on selected provider
-    3. Common parameters (temperature)
-    """
-    initialize_model_settings()
-    selected_provider = render_provider_selector()
-    selected_model = render_model_selector(selected_provider)
-    temperature = render_parameter_settings(selected_provider)
-    update_global_settings(selected_provider, selected_model, temperature)
+    if not available_llm_providers:
+        st.warning("No LLM providers available. Please configure API keys first.")
+        current_llm_provider = None
+    else:
+        current_llm_provider_name = st.session_state.config.get(
+            "provider_name", get_available_providers()[0]
+        )
+        if current_llm_provider_name not in available_llm_providers:
+            current_llm_provider_name = available_llm_providers[0]
 
-
-def render_model_selection_table() -> None:
-    """
-    Render a compact table of model settings for the active provider.
-    """
-    active_provider = initialize_model_settings()
-
-    models = list_models(provider_name=active_provider)
-    model_ids = [model["id"] for model in models]
-
-    if not model_ids:
-        st.warning(f"No models configured for {active_provider.capitalize()}.")
-        return
-
-    st.markdown(f"### {active_provider.capitalize()} Models")
-
-    st.radio(
-        "Provider:",
-        options=[p for p in get_available_providers() if get_api_key(p)],
-        format_func=lambda x: x.capitalize(),
-        index=0,
-        key="provider_table_selector",
-        horizontal=True,
-        on_change=lambda: st.session_state.update(
-            {"active_provider": st.session_state.provider_table_selector}
-        ),
-    )
-
-    current_settings = st.session_state.provider_settings.get(active_provider, {})
-    current_model = current_settings.get("model", model_ids[0] if model_ids else "")
-
-    selected_model = st.selectbox(
-        "Model:",
-        options=model_ids,
-        index=model_ids.index(current_model) if current_model in model_ids else 0,
-        key=f"{active_provider}_model_table_selector",
-    )
-
-    temperature = st.slider(
-        "Temperature:",
-        min_value=0.0,
-        max_value=2.0,
-        value=current_settings.get("temperature", 0.7),
-        step=0.1,
-        help="Controls randomness in responses: 0=deterministic, higher=more creative",
-    )
-
-    if active_provider in st.session_state.provider_settings:
-        st.session_state.provider_settings[active_provider].update(
-            {"model": selected_model, "temperature": temperature}
+        llm_provider_index = available_llm_providers.index(current_llm_provider_name)
+        current_llm_provider = st.selectbox(
+            "LLM Provider",
+            options=available_llm_providers,
+            index=llm_provider_index,
+            format_func=get_provider_display_name,
+            key="llm_provider_selector",
+            help="Select the Large Language Model provider.",
         )
 
-    update_global_settings(active_provider, selected_model, temperature)
+    if current_llm_provider:
+        models = list_llm_models(provider_name=current_llm_provider)
+        model_ids = [m["id"] for m in models]
+        current_model_id = st.session_state.config.get("model_id", "")
+        if current_model_id not in model_ids:
+            current_model_id = model_ids[0] if model_ids else ""
+        model_index = model_ids.index(current_model_id) if current_model_id in model_ids else 0
+
+        selected_model_id = st.selectbox(
+            "Model",
+            options=model_ids,
+            index=model_index,
+            key="model_selector",
+            help="Select the specific model to use.",
+            disabled=not model_ids,
+        )
+
+        current_temperature = st.session_state.config.get("temperature", 0.7)
+        selected_temperature = st.slider(
+            "Temperature",
+            min_value=0.0,
+            max_value=1.0,
+            value=current_temperature,
+            step=0.05,
+            key="temperature_slider",
+            help="Controls randomness. Lower values make responses more deterministic.",
+        )
+    else:
+        st.selectbox("Model", options=[], disabled=True)
+        st.slider("Temperature", min_value=0.0, max_value=1.0, value=0.7, disabled=True)
+
+    return current_llm_provider, selected_model_id, selected_temperature
 
 
-def initialize_model_settings() -> str:
-    """
-    Initialize model settings in session state and return active provider.
+def _render_embedding_settings_form_section() -> str | None:
+    """Renders the Embedding model selector."""
+    st.markdown("### Embedding Configuration")
+    available_embed_models = list_embedding_models()
+    embed_model_ids = [m["id"] for m in available_embed_models]
+    selected_embed_model_id = None
 
-    Returns:
-        The active provider ID
-    """
-    from paperchat.llms.common import list_models
-    from paperchat.llms.manager import LLMManager
-    from paperchat.utils.api_keys import get_api_key, get_available_providers
-    from paperchat.utils.config import (
-        DEFAULT_MAX_TOKENS,
-        DEFAULT_MODEL,
-        DEFAULT_PROVIDER,
-        DEFAULT_TEMPERATURE,
-    )
-
-    if "config" not in st.session_state:
-        st.session_state.config = {
-            "provider_name": DEFAULT_PROVIDER,
-            "model_id": DEFAULT_MODEL,
-            "temperature": DEFAULT_TEMPERATURE,
-            "max_tokens": DEFAULT_MAX_TOKENS,
-            "top_k": 5,
-        }
-
-    providers = get_available_providers()
-    active_provider = st.session_state.config.get("provider_name", "")
-
-    if not active_provider or active_provider not in providers:
-        for provider in providers:
-            if get_api_key(provider):
-                active_provider = provider
-                st.session_state.config["provider_name"] = provider
-                break
-
-        if not active_provider and providers:
-            active_provider = providers[0]
-            st.session_state.config["provider_name"] = active_provider
-
-    if not st.session_state.config.get("model_id"):
-        models = list_models(provider_name=active_provider)
-        model_ids = [model["id"] for model in models]
-        if model_ids:
-            st.session_state.config["model_id"] = model_ids[0]
-
-    if "llm_manager" not in st.session_state:
-        api_key = get_api_key(active_provider)
-        st.session_state.llm_manager = LLMManager(config=st.session_state.config, api_key=api_key)
-
-    return active_provider
-
-
-def render_provider_settings(provider: str, on_save_callback: Callable | None = None) -> None:
-    """
-    Render settings for a specific provider, including API key and model settings.
-
-    Args:
-        provider: Provider name (e.g., "openai")
-        on_save_callback: Function to call after saving settings
-    """
-    api_key_configured = render_api_key_manager(provider, on_save_callback)
-    if api_key_configured:
-        st.divider()
-        st.subheader("Model Settings")
-        render_model_settings(provider)
-
-    st.divider()
-    if provider == "openai":
-        st.markdown("[Get an OpenAI API key](https://platform.openai.com/api-keys)")
-    elif provider == "anthropic":
-        st.markdown("[Get an Anthropic API key](https://console.anthropic.com/)")
-
-
-def render_settings_tabs(on_save_callback: Callable | None = None) -> None:
-    """
-    Render settings as tabs, one for each provider.
-
-    Args:
-        on_save_callback: Function to call after saving settings
-    """
-    providers = get_available_providers()
-
-    if not providers:
-        st.info("No API providers configured.")
-        return
-
-    tab_labels = [provider.capitalize() for provider in providers]
-    tabs = st.tabs(tab_labels)
-
-    for i, provider in enumerate(providers):
-        with tabs[i]:
-            render_provider_settings(provider, on_save_callback)
-
-
-def _handle_api_key_actions(provider: str) -> bool:
-    """
-    Handle API key actions like adding, changing, or removing a key.
-
-    Args:
-        provider: Provider name
-
-    Returns:
-        True if the UI needs to be rerun
-    """
-    is_configured = get_api_key(provider) is not None
-    col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
-
-    with col1:
-        st.markdown(f"**{provider.lower()}**")
-
-    with col2:
-        st.markdown(f"**{provider}**")
-
-    with col3:
-        if is_configured:
-            from paperchat.utils.api_keys import mask_api_key
-
-            masked_key = mask_api_key(get_api_key(provider))
-            st.code(masked_key, language=None)
+    if not embed_model_ids:
+        st.warning(
+            "No Embedding models available. Configure required API keys (e.g., Gemini or OpenAI) or rely on the offline default."
+        )
+        st.info("Offline default: `milvus/all-MiniLM-L6-v2` will be used.")
+        current_embed_model_id = "milvus/all-MiniLM-L6-v2"
+        st.selectbox(
+            "Embedding Model",
+            options=[current_embed_model_id],
+            index=0,
+            key="embedding_model_selector",
+            help="Select the model used for document embedding and search. Requires API keys for some models.",
+            disabled=True,
+        )
+    else:
+        current_embed_model_id = get_active_embedding_model()
+        if current_embed_model_id not in embed_model_ids:
+            embed_model_index = 0
+            current_embed_model_id = embed_model_ids[0]
         else:
-            st.markdown("🔑 *Not configured*")
+            embed_model_index = embed_model_ids.index(current_embed_model_id)
 
-    with col4:
-        if is_configured:
-            if st.button("Change", key=f"change_{provider}_btn"):
-                st.session_state[f"show_{provider}_form"] = True
+        selected_embed_model_id = st.selectbox(
+            "Embedding Model",
+            options=embed_model_ids,
+            index=embed_model_index,
+            key="embedding_model_selector",
+            help="Select the model used for document embedding and search. API keys required for OpenAI/Gemini models.",
+        )
+    return selected_embed_model_id
 
-            if st.button("Remove", key=f"remove_{provider}_btn"):
-                from paperchat.utils.api_keys import remove_api_key
 
-                success, message = remove_api_key(provider)
-                if success:
-                    st.success(message)
-                    return True
-                else:
-                    st.error(message)
-        elif st.button("Add Key", key=f"add_{provider}_btn"):
-            st.session_state[f"show_{provider}_form"] = True
+def _save_llm_settings(
+    selected_llm_provider: str | None,
+    selected_llm_model: str | None,
+    selected_llm_temp: float,
+) -> bool:
+    """Saves LLM settings to session state and returns True if changed."""
+    changed = False
+    if selected_llm_provider and selected_llm_model:
+        if st.session_state.config.get("provider_name") != selected_llm_provider:
+            st.session_state.config["provider_name"] = selected_llm_provider
+            changed = True
+        if st.session_state.config.get("model_id") != selected_llm_model:
+            st.session_state.config["model_id"] = selected_llm_model
+            changed = True
+        if st.session_state.config.get("temperature") != selected_llm_temp:
+            st.session_state.config["temperature"] = selected_llm_temp
+            changed = True
 
-    if st.session_state.get(f"show_{provider}_form", False):
-        with st.expander(f"Configure {provider.capitalize()} API Key", expanded=True):
-            from paperchat.ui.api_settings import render_api_key_form
+        if changed:
+            st.success(
+                f"LLM settings saved: Provider '{selected_llm_provider}', Model '{selected_llm_model}', Temp {selected_llm_temp:.2f}"
+            )
+        return changed  # Return True if anything was actually changed
+    else:
+        st.warning("LLM Provider/Model not fully selected. LLM settings not saved.")
+        return False
 
-            if render_api_key_form(provider, on_save_callback=lambda: st.rerun()):
-                st.session_state[f"show_{provider}_form"] = False
-                return True
 
-            if st.button("Cancel", key=f"cancel_{provider}_form"):
-                st.session_state[f"show_{provider}_form"] = False
-                return True
+def _save_embedding_settings(selected_embed_model: str | None) -> bool | None:
+    """Saves embedding setting after checking API key. Returns True on success, False on key error, None if no model selected."""
+    if selected_embed_model is None:
+        return None  # Indicate no action taken
 
-    return False
+    provider = selected_embed_model.split("/")[0]
+    key_needed = provider in PROVIDERS_REQUIRING_KEYS
+    key_present = get_api_key(provider) is not None
+
+    if key_needed and not key_present:
+        st.error(
+            f"Cannot save: Embedding model '{selected_embed_model}' requires an API key for '{provider}', which is missing."
+        )
+        return False  # Indicate failure due to missing key
+
+    if get_active_embedding_model() != selected_embed_model:
+        save_attempt = set_active_embedding_model(selected_embed_model)
+        if save_attempt:
+            st.success(f"Embedding model saved: '{selected_embed_model}'")
+            return True  # Indicate successful save
+        else:
+            st.error("Failed to save embedding model setting.")
+            return False  # Indicate failure during save
+    else:
+        return True  # Indicate success (no change needed)
+
+
+def _handle_settings_form_submission(
+    selected_llm_provider: str | None,
+    selected_llm_model: str | None,
+    selected_llm_temp: float,
+    selected_embed_model: str | None,
+    on_save_callback: Callable | None,
+) -> None:
+    """Handles the logic after the settings form is submitted."""
+    llm_settings_changed = _save_llm_settings(
+        selected_llm_provider, selected_llm_model, selected_llm_temp
+    )
+    embedding_save_status = _save_embedding_settings(selected_embed_model)
+
+    # --- Callback and Rerun Logic ---
+    # Callback if *any* setting was successfully changed or saved (even if value didn't change)
+    if (llm_settings_changed or embedding_save_status is True) and on_save_callback:
+        on_save_callback()
+
+    # Rerun if *any* setting was successfully changed or saved,
+    # *unless* the only action was an embedding save failure (due to key error).
+    if llm_settings_changed or embedding_save_status is True:
+        st.rerun()
+    # No explicit else needed, as we don't rerun on embedding_save_status == False or None
+    # if llm_settings_changed is also False.
 
 
 def render_unified_settings_page(on_save_callback: Callable | None = None) -> None:
-    """
-    Render a settings page with unified model selection.
-
-    Args:
-        on_save_callback: Function to call after saving settings
-    """
-    render_page_header("Settings", "Configure API keys and model settings for PaperChat")
-
-    with st.expander("Model Selection", expanded=True):
-        render_model_table()
-
-    with st.expander("Retrieval Settings", expanded=True):
-        st.subheader("Document Retrieval")
-        top_k = st.slider(
-            "Number of chunks to retrieve",
-            min_value=1,
-            max_value=10,
-            value=st.session_state.settings.get("top_k", 5),
-            help="Higher values retrieve more document chunks but may include less relevant information",
-        )
-
-        if "settings" in st.session_state:
-            st.session_state.settings.update({"top_k": top_k})
-
-
-def render_settings_page(on_save_callback: Callable | None = None) -> None:
-    """
-    Render the settings configuration page.
-
-    Args:
-        on_save_callback: Optional callback to execute after settings are saved
-    """
-    add_api_table_css()
-    st.header("⚙️ Settings")
-    if st.button("Back to Chat", icon="⬅️", type="tertiary", use_container_width=False):
+    """Render the unified settings page with LLM and Embedding settings."""
+    if st.button("← Back"):
         st.session_state.show_settings = False
         st.rerun()
 
-    st.subheader("API Keys")
-    st.caption("Configure API keys for each provider.")
+    render_page_header("Application Settings", "Configure API Keys, LLM, and Embedding models.")
+    add_api_table_css()
+
+    st.markdown("### API Key Management")
+    st.info(
+        "Enter API keys for the providers you wish to use. Keys are stored securely.", icon="🔑"
+    )
     render_api_key_table()
 
-    st.subheader("Models")
-    st.caption("Select which model to use for generating responses.")
-    render_model_table()
+    st.divider()
 
-    st.subheader("Model & Retrieval Settings")
-    with st.form("settings_form"):
-        active_provider = st.session_state.get("active_provider", "")
-        active_settings = st.session_state.provider_settings.get(active_provider, {})
-        active_model = active_settings.get("model", "")
+    # LLM and Embedding settings within a form
+    with st.form(key="unified_settings_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            # Render LLM settings section
+            selected_llm_provider, selected_llm_model, selected_llm_temp = (
+                _render_llm_settings_form_section()
+            )
+        with col2:
+            # Render Embedding settings section
+            selected_embed_model = _render_embedding_settings_form_section()
 
-        provider_display = get_provider_display_name(active_provider)
+        submitted = st.form_submit_button("Save Settings", use_container_width=True)
 
-        st.markdown(f"**Current Model:** {provider_display} - `{active_model}`")
+        if submitted:
+            # Handle form submission logic
+            _handle_settings_form_submission(
+                selected_llm_provider,
+                selected_llm_model,
+                selected_llm_temp,
+                selected_embed_model,
+                on_save_callback,
+            )
 
-        temperature = st.slider(
-            "Temperature",
-            min_value=0.0,
-            max_value=2.0,
-            value=active_settings.get("temperature", 0.7),
-            step=0.1,
-            help="Controls randomness in responses: 0=deterministic, higher=more creative",
-        )
 
-        st.markdown("### Retrieval Settings")
-        top_k = st.slider(
-            "Number of chunks to retrieve",
-            min_value=1,
-            max_value=20,
-            value=st.session_state.settings.get("top_k", 5),
-            step=1,
-            help="How many chunks from the document to include in the model's context.",
-        )
-
-        save_button = st.form_submit_button("Save Settings")
-
-        if save_button:
-            if active_provider in st.session_state.provider_settings:
-                st.session_state.provider_settings[active_provider]["temperature"] = temperature
-
-            st.session_state.settings["top_k"] = top_k
-
-            if active_provider and active_model:
-                update_global_settings(active_provider, active_model, temperature)
-
-            st.success("Settings saved!")
+def render_settings_page(on_save_callback: Callable | None = None) -> None:
+    """Main function to render the settings page content."""
+    render_unified_settings_page(on_save_callback)
