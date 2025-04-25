@@ -45,7 +45,7 @@ class VectorStore:
     def __init__(
         self,
         db_path: str = VECTOR_DB_DIR,
-        model_identifier: str = "all-MiniLM-L6-v2",  # Default fallback model
+        model_identifier: str = "milvus/all-MiniLM-L6-v2",  # Default fallback model
     ):
         """
         Initializes the VectorStore, connects to Milvus, determines the correct
