@@ -2,12 +2,15 @@
 Common protocols and interfaces for LLM providers.
 """
 
+import logging
 from typing import Any, Generator, Protocol, Type, runtime_checkable
 
 from ..utils.config import DEFAULT_PROVIDER
 from .anthropic import AnthropicAdapter
 from .gemini import GeminiAdapter
 from .openai import OpenAIAdapter
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -84,16 +87,7 @@ def get_provider(provider_name: str = DEFAULT_PROVIDER) -> Type[LLMProvider]:
 
 
 def get_client(provider_name: str = DEFAULT_PROVIDER, api_key: str | None = None) -> Any:
-    """
-    Get a client for the specified provider.
-
-    Args:
-        provider_name: Name of the provider to use
-        api_key: Optional API key
-
-    Returns:
-        Provider client instance
-    """
+    """Get a client for the specified provider."""
     provider = get_provider(provider_name)
 
     return provider.get_client(api_key)
@@ -172,37 +166,18 @@ def generate_streaming_response(
 
 
 def register_provider(name: str, provider_class: Type[LLMProvider]) -> None:
-    """
-    Register a new LLM provider.
-
-    Args:
-        name: Name to register the provider under
-        provider_class: Provider class implementing the LLMProvider protocol
-    """
+    """Register a new LLM provider."""
     PROVIDERS[name] = provider_class
 
 
 def list_available_providers() -> list[str]:
-    """
-    List all available provider names.
-
-    Returns:
-        List of provider names
-    """
+    """List all available provider names."""
 
     return list(PROVIDERS.keys())
 
 
-def list_models(provider_name: str = DEFAULT_PROVIDER) -> list[dict[str, Any]]:
-    """
-    List models available from the specified provider.
-
-    Args:
-        provider_name: Name of the provider
-
-    Returns:
-        List of model information dictionaries
-    """
+def list_llm_models(provider_name: str = DEFAULT_PROVIDER) -> list[dict[str, Any]]:
+    """List LLM models available from the specified provider."""
     provider = get_provider(provider_name)
 
     return provider.list_models()

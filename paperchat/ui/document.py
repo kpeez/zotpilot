@@ -10,24 +10,18 @@ from pathlib import Path
 
 import streamlit as st
 
+from paperchat.llms.common import list_llm_models
 from paperchat.ui.common import refresh_model_state
 from paperchat.ui.settings import (
-    initialize_model_settings,
     update_global_settings,
 )
+from paperchat.utils.api_keys import get_api_key, get_available_providers
 
 logger = logging.getLogger("document_ui")
 
 
 def render_compact_settings_ui() -> None:
     """Render a compact settings UI for the sidebar."""
-    initialize_model_settings()
-
-    from paperchat.llms.common import list_models
-    from paperchat.utils.api_keys import (
-        get_api_key,
-        get_available_providers,
-    )
 
     all_models = []
     active_provider = st.session_state.config.get("provider_name", "")
@@ -37,7 +31,7 @@ def render_compact_settings_ui() -> None:
         if not get_api_key(provider):
             continue
 
-        models = list_models(provider_name=provider)
+        models = list_llm_models(provider_name=provider)
         for model in models:
             model_display = f"{model['id']}"
             all_models.append(
@@ -260,10 +254,6 @@ def render_document_list() -> None:
 
 def render_model_selection() -> tuple[str | None, str | None]:
     """Render the model selection dropdown in the sidebar."""
-    initialize_model_settings()
-    from paperchat.llms.common import list_models
-    from paperchat.utils.api_keys import get_api_key, get_available_providers
-
     all_models = []
     active_provider = st.session_state.config.get("provider_name", "")
     active_model = st.session_state.config.get("model_id", "")
@@ -272,7 +262,7 @@ def render_model_selection() -> tuple[str | None, str | None]:
         if not get_api_key(provider):
             continue
 
-        models = list_models(provider_name=provider)
+        models = list_llm_models(provider_name=provider)
         for model in models:
             model_display = f"{model['id']}"
             all_models.append(
