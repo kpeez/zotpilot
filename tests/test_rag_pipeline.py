@@ -6,6 +6,8 @@ import pytest
 
 from paperchat.core import RAGPipeline
 
+TEST_MODEL_ID = "test-embedding-model"
+
 
 @pytest.fixture
 def mock_llm_manager():
@@ -25,22 +27,34 @@ def mock_vector_store():
 @pytest.fixture
 def rag_pipeline(mock_llm_manager, mock_vector_store):
     """Fixture to create a RAGPipeline instance with mocked dependencies."""
-    with mock.patch("paperchat.core.rag_pipeline.VectorStore", return_value=mock_vector_store):
+    with (
+        mock.patch(
+            "paperchat.core.rag_pipeline.get_active_embedding_model",
+            return_value=TEST_MODEL_ID,
+        ),
+        mock.patch("paperchat.core.rag_pipeline.VectorStore", return_value=mock_vector_store),
+    ):
         pipeline = RAGPipeline(llm_manager=mock_llm_manager)
     return pipeline
 
 
 def test_init(mock_llm_manager):
     """Test initialization of RAGPipeline."""
-    with mock.patch("paperchat.core.rag_pipeline.VectorStore") as mock_vs_cls:
+    with (
+        mock.patch(
+            "paperchat.core.rag_pipeline.get_active_embedding_model",
+            return_value=TEST_MODEL_ID,
+        ) as mock_get_active_model,
+        mock.patch("paperchat.core.rag_pipeline.VectorStore") as mock_vs_cls,
+    ):
         mock_vs_instance = mock.MagicMock()
         mock_vs_cls.return_value = mock_vs_instance
 
         pipeline = RAGPipeline(llm_manager=mock_llm_manager)
 
         assert pipeline.llm_manager is mock_llm_manager
-
-        mock_vs_cls.assert_called_once()
+        mock_get_active_model.assert_called_once()
+        mock_vs_cls.assert_called_once_with(model_identifier=TEST_MODEL_ID)
         assert pipeline.vector_store is mock_vs_instance
 
 

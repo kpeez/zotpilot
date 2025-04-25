@@ -13,6 +13,7 @@ from paperchat.core.vector_store import (
     DEFAULT_SIMILARITY_THRESHOLD,
     DEFAULT_SIMILARITY_TOP_K,
     VectorStore,
+    sanitize_model_identifier,
 )
 
 MAIN_FIELD_NAMES = {
@@ -26,6 +27,9 @@ MAIN_FIELD_NAMES = {
     "source",
 }
 METADATA_FIELD_NAMES = {"pk", "source", "original_filename", "date_added"}
+
+TEST_MODEL_ID = "milvus/all-MiniLM-L6-v2"
+TEST_MODEL_DIM = 384
 
 
 @pytest.fixture
@@ -59,17 +63,15 @@ def vector_store_init_mocks():
         ) as mock_get_create,
         mock.patch("paperchat.core.vector_store.VectorStore._build_indices") as mock_build_indices,
         mock.patch("paperchat.core.vector_store.get_component_logger") as mock_get_logger,
-        mock.patch(
-            "paperchat.core.vector_store.model.DefaultEmbeddingFunction"
-        ) as mock_embed_fn_class,
+        mock.patch("paperchat.core.vector_store.get_embedding_model") as mock_get_model,
     ):
         mock_client = mock.MagicMock()
         mock_client_class.return_value = mock_client
         mock_get_logger.return_value = mock.MagicMock()
         mock_embed_fn = mock.MagicMock()
-        mock_embed_fn.dim = 768
-        mock_embed_fn_class.return_value = mock_embed_fn
-        yield mock_client_class, mock_get_create, mock_build_indices, mock_embed_fn_class
+        mock_embed_fn.dim = TEST_MODEL_DIM
+        mock_get_model.return_value = mock_embed_fn
+        yield mock_client_class, mock_get_create, mock_build_indices, mock_get_model
 
 
 @pytest.fixture
@@ -79,16 +81,15 @@ def vector_store(mock_milvus_client, temp_db_path):
         mock.patch("paperchat.core.vector_store.VectorStore._get_or_create_collection"),
         mock.patch("paperchat.core.vector_store.VectorStore._build_indices"),
         mock.patch("paperchat.core.vector_store.get_component_logger") as mock_get_logger,
-        mock.patch(
-            "paperchat.core.vector_store.model.DefaultEmbeddingFunction"
-        ) as mock_embed_fn_class,
+        mock.patch("paperchat.core.vector_store.get_embedding_model") as mock_get_model,
     ):
         mock_get_logger.return_value = mock.MagicMock()
         mock_embed_fn = mock.MagicMock()
-        mock_embed_fn.dim = 768
-        mock_embed_fn.encode_queries.return_value = [np.array([0.1] * 768)]
-        mock_embed_fn_class.return_value = mock_embed_fn
-        store = VectorStore(db_path=temp_db_path)
+        mock_embed_fn.dim = TEST_MODEL_DIM
+        mock_embed_fn.encode_queries.return_value = [np.array([0.1] * TEST_MODEL_DIM)]
+        mock_get_model.return_value = mock_embed_fn
+
+        store = VectorStore(db_path=temp_db_path, model_identifier=TEST_MODEL_ID)
         store.client = mock_milvus_client
         store._embed_fn = mock_embed_fn
         store.main_schema = store._define_main_schema()
@@ -98,25 +99,28 @@ def vector_store(mock_milvus_client, temp_db_path):
 
 def test_init_connects_and_sets_up(vector_store_init_mocks, temp_db_path):
     """Test initialization connects, creates collections, and builds indices."""
-    (mock_client_class, mock_get_create, mock_build_indices, mock_embed_fn_class) = (
+    (mock_client_class, mock_get_create, mock_build_indices, mock_get_model) = (
         vector_store_init_mocks
     )
 
-    store = VectorStore(db_path=temp_db_path)
+    store = VectorStore(db_path=temp_db_path, model_identifier=TEST_MODEL_ID)
 
     mock_client_class.assert_called_once_with(uri=temp_db_path)
     assert store.client == mock_client_class.return_value
     assert store.db_path == temp_db_path
-    assert store.collection_name == VectorStore.DEFAULT_COLLECTION_NAME
+    assert store.model_identifier == TEST_MODEL_ID
+
+    expected_collection_name = f"paperchat_docs_{sanitize_model_identifier(TEST_MODEL_ID)}"
+    assert store.collection_name == expected_collection_name
     assert store.metadata_collection_name == VectorStore.METADATA_COLLECTION_NAME
 
-    mock_embed_fn_class.assert_called_once()
-    assert store.embedding_dim == 768
+    mock_get_model.assert_called_once_with(TEST_MODEL_ID)
+    assert store.embedding_dim == TEST_MODEL_DIM
 
     assert mock_get_create.call_count == 2
     mock_get_create.assert_has_calls(
         [
-            mock.call(store.collection_name, mock.ANY),
+            mock.call(expected_collection_name, mock.ANY),
             mock.call(store.metadata_collection_name, mock.ANY),
         ],
         any_order=True,
@@ -158,7 +162,7 @@ def test_add_document_success(mock_dt, vector_store):
             {"insert_count": 1},
         ]
 
-        result = vector_store.add_document(str(pdf_path))
+        result = vector_store.add_document(str(pdf_path), source_id=source_id)
 
         assert result is True
         vector_store.client.query.assert_called_once_with(
@@ -187,7 +191,7 @@ def test_add_document_already_exists(vector_store):
     vector_store.client.query.return_value = [{"source": source_id}]
 
     with mock.patch("paperchat.core.vector_store.process_pdf_document") as mock_process:
-        result = vector_store.add_document(str(pdf_path))
+        result = vector_store.add_document(str(pdf_path), source_id=source_id)
 
         assert result is True
         vector_store.client.query.assert_called_once_with(
@@ -217,7 +221,7 @@ def test_add_document_chunk_insert_failure(mock_process, vector_store):
         {"insert_count": 1},
     ]
 
-    result = vector_store.add_document(str(pdf_path))
+    result = vector_store.add_document(str(pdf_path), source_id=source_id)
 
     assert result is False
     vector_store.client.query.assert_called_once()
@@ -251,7 +255,7 @@ def test_add_document_metadata_insert_failure(mock_process, mock_dt, vector_stor
         {"insert_count": 0},
     ]
 
-    result = vector_store.add_document(str(pdf_path))
+    result = vector_store.add_document(str(pdf_path), source_id=source_id)
 
     assert result is False
     vector_store.client.query.assert_called_once()
@@ -270,10 +274,8 @@ def test_add_document_metadata_insert_failure(mock_process, mock_dt, vector_stor
 def test_retrieve_success(vector_store):
     """Test retrieving documents successfully."""
     query_text = "test query"
-    # expected *final* output of VectorStore.search
     expected_results = [{"entity": {"text": "result", "pk": 1, "source": "s1"}, "distance": 0.9}]
     vector_store.client.reset_mock()
-    # simulate the raw output from client.search (list of lists)
     mock_client_output = [expected_results]
     vector_store.client.search.return_value = mock_client_output
 
@@ -281,13 +283,11 @@ def test_retrieve_success(vector_store):
 
     results = vector_store.search(query_text)
 
-    # Assert against the expected final processed output
     assert results == expected_results
     vector_store.client.search.assert_called_once()
-    # Check args passed to the actual client.search call
     call_args, call_kwargs = vector_store.client.search.call_args
     assert call_kwargs["collection_name"] == vector_store.collection_name
-    assert len(call_kwargs["data"]) == 1  # Check only one query embedding was passed
+    assert len(call_kwargs["data"]) == 1
     assert call_kwargs["limit"] == DEFAULT_SIMILARITY_TOP_K
     assert call_kwargs["output_fields"] == output_fields
     assert call_kwargs["filter"] is None
@@ -301,10 +301,8 @@ def test_retrieve_with_filter_and_custom_params(vector_store):
     custom_k = 3
     custom_threshold = 0.5
     custom_output_fields = ["text", "source"]
-    # This is the expected *final* output of VectorStore.search
     expected_results = [{"entity": {"text": "filtered result", "source": "doc1"}, "distance": 0.6}]
     vector_store.client.reset_mock()
-    # This simulates the raw output from client.search (list of lists)
     mock_client_output = [expected_results]
     vector_store.client.search.return_value = mock_client_output
 
@@ -316,10 +314,8 @@ def test_retrieve_with_filter_and_custom_params(vector_store):
         filter_expression=filter_expr,
     )
 
-    # Assert against the expected final processed output
     assert results == expected_results
     vector_store.client.search.assert_called_once()
-    # Check args passed to the actual client.search call
     call_args, call_kwargs = vector_store.client.search.call_args
     assert call_kwargs["collection_name"] == vector_store.collection_name
     assert len(call_kwargs["data"]) == 1
