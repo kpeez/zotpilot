@@ -2,6 +2,7 @@ from typing import Any, Generator
 
 from ..llms.manager import LLMManager
 from ..utils.formatting import format_context
+from ..utils.settings import get_active_embedding_model
 from .vector_store import DEFAULT_SIMILARITY_THRESHOLD, VectorStore
 
 
@@ -21,7 +22,8 @@ class RAGPipeline:
             llm_manager: An instance of LLMManager to handle LLM interactions.
         """
         self.llm_manager = llm_manager
-        self.vector_store = VectorStore()
+        active_model = get_active_embedding_model()
+        self.vector_store = VectorStore(model_identifier=active_model)
 
     def retrieve(
         self,
