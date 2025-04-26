@@ -8,6 +8,7 @@
 
 # Python files #
 /evaluation/data*
+/evaluation/results*
 .env
 .venv
 dist
